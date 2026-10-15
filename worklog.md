@@ -898,3 +898,226 @@ Unresolved / Notes:
   push (VAPID) for real security alerts, SIEM webhook export wiring, per-employee
   detail page with scan-history timeline + stats charts, WebSocket /ws/alerts
   for real-time lockdown/failed-scan push to admin dashboard.
+
+---
+
+## Task ID: 7 — CSV Bulk Employee Import
+**Agent:** full-stack-developer
+**Scope:** Backend POST endpoint + frontend multi-step dialog, wired into existing Employees view header + empty-state CTA.
+
+### Work Log
+
+**Files created:**
+- `src/app/api/v1/employees/import/route.ts` — POST endpoint. Auth-gated
+  `hr_admin | security_officer | superadmin`. Accepts `{ rows: ImportRow[] }`.
+  Flow: pre-fetch all departments once (code→id map, uppercased), load
+  SystemState for `orgCode`, validate each row (employeeCode+fullName required,
+  accessLevel integer 1-5 default 1, departmentCode optional but must exist if
+  provided, in-batch duplicate detection via lowercase-normalised Set), then
+  bulk-query existing employees by `employeeCode IN [...] AND fullName != "Deleted User"`
+  and move any matched rows into the `skipped` bucket (using the
+  `fullName: { not: "Deleted User" }` soft-delete marker per the cached-Prisma
+  caveat — `deletedAt` is intentionally NOT used). All remaining valid rows are
+  created inside `db.$transaction`, each minting its own QR card token via
+  `buildToken({ orgCode, expEpoch: now + 2y })` + `sha256` → `cardTokenHash`,
+  `cardStatus: "active"`, `cardExpiresAt`. The raw `cardToken` strings are
+  returned in the response so the UI can display/copy/print them (they are
+  never persisted in plaintext). One `employee.bulk_import` admin action is
+  logged with `{count, skipped, errors}` in `afterData`. Response shape:
+  `{ successCount, errorCount, errors:[{row,message}], created:[{id,employeeCode,fullName,cardToken}], skipped:[{row,employeeCode,reason}] }`.
+  Hard caps at 500 rows per import. `export const dynamic = "force-dynamic"`.
+
+- `src/components/admin/views/csv-import-dialog.tsx` — Polished 3-step dialog
+  with framer-motion step transitions (AnimatePresence, slide-x):
+  - **Step 1 (Input)**: large `<Textarea>` (mono font) for pasting CSV text,
+    "Load sample CSV" button (3 sample rows: ENG/SEC/HR — codes that exist in
+    seed), "Upload .csv file" button (hidden native `<input type="file"
+    accept=".csv">` + `FileReader.readAsText`), "Clear" button, row count
+    indicator, "Parse & Preview" CTA. Header hint shows the expected column
+    order (`employeeCode,fullName,departmentCode,designation,accessLevel`).
+  - **Step 2 (Preview)**: client-side parse via quoted-aware CSV line parser
+    (handles `"` and `""` escapes, splits on commas, trims). Builds a ParsedRow
+    table with sticky header, horizontal-scroll on mobile (`overflow-x-auto`,
+    `hidden md:table-cell` / `hidden sm:table-cell` columns), red-tinted
+    background for error rows. Each error row shows a precise inline message
+    ("Missing fullName", "Duplicate code in batch", "Access level must be
+    1-5 (got \"7\")", "Department code not found: \"XYZ\""). Summary badges:
+    total / valid (emerald) / errors (destructive). "Back to edit" returns to
+    step 1 (preserves textarea). "Import N valid rows" disabled if 0 valid
+    or while mutation pending. Pre-fetches departments list (via
+    `useQuery(["departments"])`) for code→name display.
+  - **Step 3 (Result)**: 3 StatCards (Created / Skipped / Errors, emerald /
+    amber / red tones) + an Alert reminding the admin that tokens are shown
+    once. Created-employees table with truncated card tokens (mono), per-row
+    "Copy" buttons (`navigator.clipboard.writeText`, toast on success).
+    "Print all QR codes" button opens a new window, builds an HTML page that
+    embeds each token as a `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=<token>`
+    `<img>`, and auto-calls `window.print()` after a 400ms delay.
+    Collapsible `<details>` sections for skipped rows and validation errors.
+    "Done" button closes the dialog and resets state.
+  - Uses `useMutation` for the import call (`apiClient.employees.importCsv`)
+    with `onSuccess` setting step 3, `toast.success("Imported N employees")`,
+    and `qc.invalidateQueries({ queryKey: ["employees"] })` so the table
+    refreshes immediately. `onError` shows a destructive toast.
+  - Step indicator (3 numbered dots with ✓ on completed steps, emerald
+  active/done states) + a `<Progress>` bar in the footer while on steps 1–2.
+  - Emerald/teal theme throughout — no indigo/blue. Dialog sized
+  `sm:max-w-3xl max-h-[90vh]` with internal `overflow-y-auto` scroll area so
+  the long tables don't push the buttons off-screen.
+
+**Files modified:**
+- `src/lib/api-client.ts` — added `importCsv(rows)` method to the `employees`
+  object (after `stats`), fully typed against the route's response shape.
+- `src/components/admin/views/employees-view.tsx` — added `Upload` to the
+  lucide-react import list, `import { CsvImportDialog }` next to
+  `EmployeeDetailSheet`, `const [importOpen, setImportOpen] = useState(false)`
+  alongside the other dialog state, "Import CSV" outline button in BOTH the
+  header actions (grouped with "Add Employee" in a flex container) and the
+  empty-state CTA, and `<CsvImportDialog open={importOpen} onOpenChange={setImportOpen} />`
+  rendered at the bottom near the other dialogs. No other logic touched.
+
+### Verification
+
+- `bun run lint` — passes cleanly (0 errors, 0 warnings) across the whole
+  project. Fixed one transient lint error in the dialog (using
+  `onOpenChangeWrap.bind(null, false)` triggered `react-hooks/refs` because
+  the wrapper mutates a ref via `reset()` — replaced both call sites with
+  inline arrow functions `() => onOpenChangeWrap(false)`).
+- Browser flow verified end-to-end with agent-browser (logged in as
+  admin@acme.io / Admin@2024 — Sarah Chen superadmin):
+  1. Employees view → "Import CSV" button visible next to "Add Employee" in
+     header.
+  2. Open dialog → "Load sample CSV" fills the textarea with 3 rows (EMP-2001,
+     EMP-2002, EMP-2003 across ENG/SEC/HR).
+  3. "Parse & Preview" → step 2 shows all 3 rows marked OK, department names
+     resolved (ENG · Engineering, SEC · Security, HR · Human Resources),
+     summary "3 total · 3 valid".
+  4. "Import 3 valid rows" → toast "Imported 3 employees", step 3 shows
+     Created=3, Skipped=0, Errors=0, table with 3 employees each showing a
+     truncated card token (`v2.ACME.k1.<nonce>…`), per-row Copy buttons, and a
+     "Print all QR codes" button.
+  5. "Done" closes the dialog; the employees table auto-refreshes and shows
+     all 3 imported employees at the top (TanStack Query invalidated).
+  6. Re-opened dialog and re-imported the same sample → Created=0, Skipped=3
+     (collapsible "Skipped rows (3)" listing "Row N · EMP-200X — Employee code
+     already exists" for each).
+  7. Tested a 7-row CSV with every error class — preview correctly reported:
+     "Missing fullName", "Access level must be 1-5 (got \"7\")",
+     "Duplicate code in batch: \"EMP-3003\"", "Department code not found:
+     \"XYZ\"", "Access level must be 1-5 (got \"0\")" — summary "7 total ·
+     2 valid · 5 errors", Import button disabled-equivalent (only the 2 valid
+     rows would be submitted).
+- `dev.log` shows two successful `POST /api/v1/employees/import` calls
+  (172ms first run, 9ms duplicate-detection run) followed by the expected
+  `employees` list refetch. No runtime errors, no warnings.
+- Database confirms: 3 new Employee rows with `cardStatus: "active"`,
+  `cardExpiresAt` ~2 years out, correct `departmentId` FKs, and 1
+  AdminAction row `action:"employee.bulk_import", afterData:{"count":3,"skipped":0,"errors":0}`.
+
+### Stage Summary
+
+CSV bulk employee import is fully functional and production-shaped. The
+backend validates, dedupes (in-batch + against existing active employees via
+the `fullName != "Deleted User"` soft-delete marker), mints QR tokens inside a
+transaction, and returns a full report. The frontend gives the admin a
+guided 3-step flow with inline validation, per-row error highlighting, a
+result report with copyable tokens and a print-all-QR-codes window, and
+auto-refreshes the employees table on success. No regressions to the
+existing employees view (only header + empty-state CTA + a single dialog
+mount added). The feature is self-contained: no shared types, store,
+crypto, or auth modules were modified.
+
+
+---
+Task ID: 8
+Agent: orchestrator (main) — webDevReview round 2
+Task: QA, Employee Detail Sheet, CSV bulk import, SIEM webhooks, dashboard polish
+
+Work Log:
+- QA: All admin views + kiosk + mobile verified via agent-browser — no console
+  errors. Found & fixed a hydration error (div-in-p) in the existing DetailsDialog
+  DetailRow component (Employees view) that wrapped <Skeleton> (div) in <p>.
+  Changed to <div> wrapper.
+
+- NEW FEATURE: Employee Detail Sheet (rich right-side drawer)
+  - Backend: GET /api/v1/employees/[id]/stats — 30-day daily scan buckets
+    (granted/denied), per-kiosk breakdown, match-score distribution, recent 10
+    scans, avg latency/score, offline count.
+  - Frontend: src/components/admin/views/employee-detail-sheet.tsx — wide Sheet
+    with avatar header + profile badges, 4 KPI cards, daily-scan area chart
+    (granted/denied gradients), per-kiosk stacked bar chart, metadata grid,
+    recent-scans timeline (animated dots, tooltips), card token hash. Wired
+    into employees-view "View Details" via existing detailsTarget state.
+  - Fixed SheetTitle/SheetDescription nesting (Avatar outside the title p).
+
+- NEW FEATURE: CSV Bulk Employee Import (via subagent Task 7)
+  - Backend: POST /api/v1/employees/import — validates rows, dedupes (active
+    duplicates skipped; soft-deleted codes REACTIVATED instead of failing the
+    unique constraint — fixed a 500 error during QA), mints QR tokens in a
+    transaction, logs admin action, returns report with raw cardTokens.
+  - Frontend: csv-import-dialog.tsx — 3-step wizard (Input/Preview/Result),
+    quoted-aware CSV parser, load-sample/upload-file, per-row error highlight,
+    result with per-token copy + "Print all QR codes". Wired into employees
+    view header + empty-state CTAs.
+  - Fixed reactivation bug: soft-deleted employees keep their @unique
+    employeeCode, so re-importing the same code after delete failed with a
+    unique-constraint 500. The import route now detects soft-deleted rows
+    with matching codes and updates/reactivates them (revoking the old card
+    first) instead of trying to create new rows.
+
+- NEW FEATURE: SIEM Webhook Integration (full implementation)
+  - src/lib/webhook-store.ts — JSON-file-persisted webhook target store
+    (avoids schema migration on running server), HMAC-SHA256 signing,
+    Slack/Teams/generic payload formatting, dispatch stats.
+  - Backend: GET/POST/PATCH/DELETE /api/v1/webhooks/config (manage targets +
+    global toggle), POST /api/v1/webhooks/test (forceAll dispatch), GET
+    /api/v1/webhooks/alerts/export?format=json|csv (SIEM ingestion export).
+  - Auto-dispatch wired into: lockdown POST (critical alert) + kiosk
+    verify-face (spoof→critical, denied/challenge_failed→warning).
+  - Frontend: replaced placeholder WebhookConfig in security-view with a full
+    management UI — global toggle + stats (dispatches/last-dispatch/failures),
+    test-alert button, add/edit/delete webhook targets (Slack/Teams/generic/
+    email), per-target event filters (denied/lockdown/spoof/etc), signing
+    secret, enabled toggle, empty state, audit-CSV export link.
+  - Verified: created "Security Ops Channel" Slack target, sent test alert
+    (dispatchCount=2, failureCount=1 — fake URL correctly failed to connect),
+    persisted to db/webhook-state.json.
+
+- NEW FEATURE: Public health endpoint
+  - GET /api/v1/public/health — { status, timestamp, dbLatencyMs, uptime }.
+    No auth. For uptime monitoring / k8s liveness probes.
+
+- STYLING POLISH: Dashboard live status bar — animated ping dot "Live" badge,
+  auto-refresh indicator, last-updated timestamp, live clock (updates every
+  1s). Gradient background on the status bar.
+
+- Verified end-to-end in agent-browser (all 200, console clean, lint clean):
+  1. Dashboard: live status bar with clock, KPIs, charts.
+  2. Employees: Import CSV button → dialog → load sample → preview → import
+     3 rows → result with tokens → Done → table refreshes (reactivation works).
+  3. Employee detail sheet: click row → Sheet opens with 6 charts (daily area
+     + per-kiosk bar), KPIs, recent-scans timeline, profile badges.
+  4. Security → Alerts & Webhooks tab: full webhook management UI, add/edit/
+     delete targets, test alert dispatches (stats update), CSV export link.
+
+Stage Summary:
+- 1 hydration bug fixed (DetailsDialog DetailRow).
+- 3 major features added: Employee Detail Sheet (charts + timeline), CSV Bulk
+  Import (with soft-delete reactivation fix), SIEM Webhooks (config + test +
+  auto-dispatch + CSV export), plus public health endpoint.
+- Dashboard polish (live status bar + clock).
+- App now has 5 admin sections deeply functional + 4 user surfaces.
+
+Unresolved / Notes:
+- Webhook config persists to db/webhook-state.json (not a DB table) to avoid
+  schema migration on the running server. On a fresh deploy, could be migrated
+  to a WebhookConfig model.
+- Soft-delete uses fullName="Deleted User" marker (not deletedAt) because the
+  running server's cached Prisma client can't query the deletedAt column added
+  to schema in round 1. After a server restart, deletedAt queries should be
+  adopted for cleaner semantics.
+- Next-phase candidates: PWA service worker + web push (VAPID) for real mobile
+  push alerts, WebSocket /ws/alerts for real-time admin dashboard push,
+  per-kiosk detail page with heartbeat + sync history, enrollment wizard live
+  camera capture polish, threshold calibration history persistence, role-
+  based dashboard variants.

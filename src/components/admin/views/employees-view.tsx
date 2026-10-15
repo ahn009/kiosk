@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,8 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { apiClient } from "@/lib/api-client";
 import type { EmployeeDTO, EmployeeDetail, ScanEventDTO } from "@/lib/types";
+import { EmployeeDetailSheet } from "@/components/admin/views/employee-detail-sheet";
+import { CsvImportDialog } from "@/components/admin/views/csv-import-dialog";
 import {
   ViewContainer,
   EmptyState,
@@ -148,6 +151,7 @@ export function EmployeesView() {
 
   // -------- dialog state --------
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<EmployeeDTO | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<EmployeeDTO | null>(null);
   const [detailsData, setDetailsData] = useState<EmployeeDetail | null>(null);
@@ -234,10 +238,16 @@ export function EmployeesView() {
           </p>
         </div>
         {canEdit && (
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
-            Add Employee
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" />
+              Import CSV
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" />
+              Add Employee
+            </Button>
+          </div>
         )}
       </div>
 
@@ -310,10 +320,16 @@ export function EmployeesView() {
             description="Try adjusting your search or filters, or create a new employee."
             action={
               canEdit && (
-                <Button onClick={() => setCreateOpen(true)}>
-                  <Plus className="size-4" />
-                  Add Employee
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => setImportOpen(true)}>
+                    <Upload className="size-4" />
+                    Import CSV
+                  </Button>
+                  <Button onClick={() => setCreateOpen(true)}>
+                    <Plus className="size-4" />
+                    Add Employee
+                  </Button>
+                </div>
               )
             }
           />
@@ -554,6 +570,18 @@ export function EmployeesView() {
         }}
       />
 
+      <EmployeeDetailSheet
+        employee={detailsTarget}
+        detail={detailsData}
+        open={!!detailsTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDetailsTarget(null);
+            setDetailsData(null);
+          }
+        }}
+      />
+
       <QrDialog
         token={qrDialog?.token ?? null}
         employee={qrDialog?.employee ?? null}
@@ -613,6 +641,8 @@ export function EmployeesView() {
           onClose={() => setHistoryTarget(null)}
         />
       )}
+
+      <CsvImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </ViewContainer>
   );
 
@@ -903,7 +933,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <p className="text-sm font-medium mt-0.5">{value}</p>
+      <div className="text-sm font-medium mt-0.5">{value}</div>
     </div>
   );
 }

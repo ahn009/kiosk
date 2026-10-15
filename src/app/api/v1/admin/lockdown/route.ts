@@ -7,6 +7,7 @@ import {
   fail,
   logAdminAction,
 } from "@/lib/auth-runtime";
+import { dispatchAlert } from "@/lib/webhook-store";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,15 @@ export async function POST(req: NextRequest) {
       crlVersion: updated.crlVersion,
     },
   });
+
+  // Dispatch critical alert to SIEM webhooks
+  dispatchAlert({
+    type: "lockdown",
+    severity: "critical",
+    title: "System lockdown engaged",
+    message: `Emergency lockdown activated by ${session.email}. Reason: ${body.reason}. All kiosks set to lockdown mode.`,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 
   return ok({
     ok: true,

@@ -1,0 +1,21 @@
+{
+  "targets": [
+    {
+      "id": "whk_onzf9xwl",
+      "name": "Security Ops Channel",
+      "url": "https://hooks.slack.com/services/T000/B000/XXX",
+      "type": "slack",
+      "enabled": true,
+      "events": [
+        "denied",
+        "lockdown",
+        "spoof"
+      ],
+      "createdAt": "2026-10-15T14:20:03.788Z"
+    }
+  ],
+  "globalEnabled": true,
+  "lastDispatchAt": "2026-10-15T14:21:16.490Z",
+  "dispatchCount": 2,
+  "failureCount": 1
+}

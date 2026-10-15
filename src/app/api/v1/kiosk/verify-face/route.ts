@@ -6,6 +6,7 @@ import {
   getPendingScan,
   deletePendingScan,
 } from "@/lib/kiosk-session";
+import { dispatchAlert } from "@/lib/webhook-store";
 import type {
   VerifyFaceRequest,
   VerifyFaceResponse,
@@ -127,6 +128,33 @@ export async function POST(req: NextRequest) {
 
   // Remove the pending scan
   deletePendingScan(body.scanId);
+
+  // Dispatch SIEM alerts for security-relevant decisions (best-effort, non-blocking)
+  if (decision !== "granted" && emp) {
+    const spoofFlags = body.spoofFlags ?? {};
+    const paperDetected = Boolean(spoofFlags.paper_detected);
+    if (paperDetected) {
+      dispatchAlert({
+        type: "spoof",
+        severity: "critical",
+        title: "Spoof attempt detected",
+        message: `Paper/photo spoof attempt at kiosk ${pending.kioskId} for ${emp.fullName} (${emp.employeeCode}). Access denied.`,
+        kioskId: pending.kioskId,
+        employeeCode: emp.employeeCode,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+    } else if (decision === "denied" || decision === "challenge_failed") {
+      dispatchAlert({
+        type: "denied",
+        severity: "warning",
+        title: "Access denied",
+        message: `Face verification failed at kiosk ${pending.kioskId} for ${emp.fullName} (${emp.employeeCode}). Match score ${(matchScore * 100).toFixed(0)}%.`,
+        kioskId: pending.kioskId,
+        employeeCode: emp.employeeCode,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+    }
+  }
 
   const response: VerifyFaceResponse = {
     decision,

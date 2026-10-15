@@ -21,6 +21,12 @@ import {
   Clock,
   ShieldCheck,
   AlertTriangle,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  XCircle,
+  Download,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -664,150 +670,445 @@ function AdminActionRow({
 // ============ Webhook config ============
 
 function WebhookConfig() {
-  const [enabled, setEnabled] = useState(false);
-  const [provider, setProvider] = useState("slack");
-  const [url, setUrl] = useState("");
-  const [events, setEvents] = useState<string[]>(["denied", "lockdown"]);
-  const [minScore, setMinScore] = useState("0.5");
+  const qc = useQueryClient();
+  const { data: state, isLoading } = useQuery({
+    queryKey: ["webhook-state"],
+    queryFn: () => apiClient.webhooks.get(),
+  });
 
-  function toggleEvent(ev: string) {
-    setEvents((prev) =>
-      prev.includes(ev) ? prev.filter((x) => x !== ev) : [...prev, ev],
-    );
-  }
+  const [showForm, setShowForm] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<{
+    id?: string;
+    name: string;
+    url: string;
+    type: string;
+    enabled: boolean;
+    secret: string;
+    events: string[];
+  } | null>(null);
 
-  function save() {
-    toast.success("Webhook configuration saved (UI only — not persisted to backend)");
-  }
+  const saveMutation = useMutation({
+    mutationFn: (t: typeof editingTarget) => apiClient.webhooks.save(t!),
+    onSuccess: () => {
+      toast.success("Webhook target saved");
+      setShowForm(false);
+      setEditingTarget(null);
+      qc.invalidateQueries({ queryKey: ["webhook-state"] });
+    },
+    onError: (e: { error?: string }) =>
+      toast.error(e?.error ?? "Failed to save webhook"),
+  });
 
-  function test() {
-    if (!url) {
-      toast.error("Enter a webhook URL first");
-      return;
-    }
-    toast.success("Webhook test sent", {
-      description: `Sample alert delivered to ${provider}`,
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => apiClient.webhooks.remove(id),
+    onSuccess: () => {
+      toast.success("Webhook target removed");
+      qc.invalidateQueries({ queryKey: ["webhook-state"] });
+    },
+  });
+
+  const toggleGlobal = useMutation({
+    mutationFn: (globalEnabled: boolean) =>
+      apiClient.webhooks.setGlobal(globalEnabled),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["webhook-state"] });
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => apiClient.webhooks.test(),
+    onSuccess: (data: { results: { ok: boolean; name: string; status?: number; error?: string }[] }) => {
+      const ok = data.results.filter((r) => r.ok).length;
+      const fail = data.results.filter((r) => !r.ok).length;
+      if (data.results.length === 0) {
+        toast.info("No enabled webhook targets to test");
+      } else if (fail === 0) {
+        toast.success(`Test alert delivered to ${ok} target${ok > 1 ? "s" : ""}`);
+      } else {
+        toast.warning(`Delivered to ${ok}, failed ${fail} target(s)`, {
+          description: data.results
+            .filter((r) => !r.ok)
+            .map((r) => `${r.name}: ${r.error ?? "HTTP " + r.status}`)
+            .join("\n"),
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["webhook-state"] });
+    },
+    onError: (e: { error?: string }) =>
+      toast.error(e?.error ?? "Test dispatch failed"),
+  });
+
+  const EVENT_OPTIONS = [
+    { id: "denied", label: "Denied" },
+    { id: "challenge_failed", label: "Challenge Failed" },
+    { id: "lockdown", label: "Lockdown" },
+    { id: "spoof", label: "Spoof Detected" },
+    { id: "supervisor_override", label: "Supervisor Override" },
+    { id: "granted", label: "Granted" },
+  ];
+
+  function startNew() {
+    setEditingTarget({
+      name: "",
+      url: "",
+      type: "slack",
+      enabled: true,
+      secret: "",
+      events: ["denied", "lockdown", "spoof"],
     });
+    setShowForm(true);
   }
 
   return (
-    <Card>
-      <CardHeader className="border-b border-border">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Webhook className="size-4 text-primary" />
-          Alert &amp; Webhook Configuration
-        </CardTitle>
-        <CardDescription>
-          Forward security alerts to Slack, Microsoft Teams, or email. (UI demo — no backend persistence in this build.)
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between p-3 rounded-lg border border-border">
-          <div>
-            <p className="text-sm font-medium">Enable webhook alerts</p>
-            <p className="text-xs text-muted-foreground">
-              When enabled, configured events trigger outbound HTTP POST.
-            </p>
-          </div>
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Provider</Label>
-            <Select value={provider} onValueChange={setProvider}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="slack">Slack</SelectItem>
-                <SelectItem value="teams">Microsoft Teams</SelectItem>
-                <SelectItem value="email">Email (SMTP)</SelectItem>
-                <SelectItem value="generic">Generic webhook</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="wh-url">Webhook URL / recipient</Label>
-            <Input
-              id="wh-url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder={
-                provider === "email"
-                  ? "security@acme.io"
-                  : "https://hooks.slack.com/services/…"
-              }
+    <div className="space-y-4">
+      {/* Global toggle + stats */}
+      <Card>
+        <CardHeader className="border-b border-border">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Webhook className="size-4 text-primary" />
+                SIEM Webhook Integration
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Forward security alerts to Slack, Microsoft Teams, or generic
+                HTTP endpoints. HMAC-SHA256 signed payloads. Alerts auto-fire
+                on denied scans, spoof attempts, and lockdown events.
+              </CardDescription>
+            </div>
+            <Switch
+              checked={state?.globalEnabled ?? true}
+              onCheckedChange={(v) => toggleGlobal.mutate(v)}
+              disabled={isLoading}
             />
           </div>
-        </div>
-
-        <div>
-          <Label className="mb-2 block">Trigger Events</Label>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: "granted", label: "Granted" },
-              { id: "denied", label: "Denied" },
-              { id: "challenge_failed", label: "Challenge Failed" },
-              { id: "lockdown", label: "Lockdown" },
-              { id: "spoof", label: "Spoof Detected" },
-              { id: "kiosk_offline", label: "Kiosk Offline" },
-            ].map((ev) => {
-              const active = events.includes(ev.id);
-              return (
-                <button
-                  key={ev.id}
-                  type="button"
-                  onClick={() => toggleEvent(ev.id)}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md border text-xs font-medium transition-colors",
-                    active
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background border-border text-muted-foreground hover:bg-accent",
-                  )}
-                >
-                  {ev.label}
-                </button>
-              );
-            })}
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border border-border bg-card p-3">
+              <Zap className="size-4 text-primary mb-1.5" />
+              <p className="text-xl font-bold tabular-nums">
+                {state?.dispatchCount ?? 0}
+              </p>
+              <p className="text-[11px] text-muted-foreground">Dispatches</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-3">
+              <Clock className="size-4 text-muted-foreground mb-1.5" />
+              <p className="text-xs font-medium">
+                {state?.lastDispatchAt
+                  ? new Date(state.lastDispatchAt).toLocaleString()
+                  : "Never"}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Last dispatch
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-3">
+              <AlertTriangle className="size-4 text-destructive mb-1.5" />
+              <p className="text-xl font-bold tabular-nums">
+                {state?.failureCount ?? 0}
+              </p>
+              <p className="text-[11px] text-muted-foreground">Failures</p>
+            </div>
           </div>
-        </div>
+          <div className="flex flex-wrap gap-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              {testMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Send className="size-3.5" />
+              )}
+              Send test alert
+            </Button>
+            <Button size="sm" onClick={startNew}>
+              <Plus className="size-3.5" />
+              Add webhook
+            </Button>
+            <a
+              href={apiClient.webhooks.exportCsvUrl({ limit: 5000 })}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Button variant="ghost" size="sm">
+                <Download className="size-3.5" />
+                Export audit CSV
+              </Button>
+            </a>
+          </div>
+        </CardContent>
+      </Card>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="wh-score">Minimum face match score to alert</Label>
-          <Input
-            id="wh-score"
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            value={minScore}
-            onChange={(e) => setMinScore(e.target.value)}
-            className="w-32"
-          />
-          <p className="text-[11px] text-muted-foreground">
-            Alerts fire when score &lt; this value.
-          </p>
-        </div>
+      {/* Add/Edit form */}
+      {showForm && editingTarget && (
+        <Card className="border-primary/30">
+          <CardHeader className="border-b border-border">
+            <CardTitle className="text-base">
+              {editingTarget.id ? "Edit webhook target" : "New webhook target"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 space-y-3">
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Name</Label>
+                <Input
+                  value={editingTarget.name}
+                  onChange={(e) =>
+                    setEditingTarget({ ...editingTarget, name: e.target.value })
+                  }
+                  placeholder="Security alerts channel"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select
+                  value={editingTarget.type}
+                  onValueChange={(v) =>
+                    setEditingTarget({ ...editingTarget, type: v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="slack">Slack</SelectItem>
+                    <SelectItem value="teams">Microsoft Teams</SelectItem>
+                    <SelectItem value="generic">Generic webhook</SelectItem>
+                    <SelectItem value="email">Email (SMTP)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Webhook URL</Label>
+              <Input
+                value={editingTarget.url}
+                onChange={(e) =>
+                  setEditingTarget({ ...editingTarget, url: e.target.value })
+                }
+                placeholder={
+                  editingTarget.type === "slack"
+                    ? "https://hooks.slack.com/services/…"
+                    : "https://outlook.office.com/webhook/…"
+                }
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Signing secret (optional)</Label>
+              <Input
+                value={editingTarget.secret}
+                onChange={(e) =>
+                  setEditingTarget({ ...editingTarget, secret: e.target.value })
+                }
+                placeholder="Used for HMAC-SHA256 signature in X-SentinelKiosk-Signature header"
+                className="font-mono text-xs"
+              />
+            </div>
+            <div>
+              <Label className="mb-2 block">Trigger events</Label>
+              <div className="flex flex-wrap gap-2">
+                {EVENT_OPTIONS.map((ev) => {
+                  const active = editingTarget.events.includes(ev.id);
+                  return (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() =>
+                        setEditingTarget({
+                          ...editingTarget,
+                          events: active
+                            ? editingTarget.events.filter((x) => x !== ev.id)
+                            : [...editingTarget.events, ev.id],
+                        })
+                      }
+                      className={cn(
+                        "px-2.5 py-1 rounded-md border text-xs font-medium transition-colors",
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background border-border text-muted-foreground hover:bg-accent"
+                      )}
+                    >
+                      {ev.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-2.5 rounded-lg border border-border">
+              <span className="text-sm">Enabled</span>
+              <Switch
+                checked={editingTarget.enabled}
+                onCheckedChange={(v) =>
+                  setEditingTarget({ ...editingTarget, enabled: v })
+                }
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingTarget(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={
+                  !editingTarget.name || !editingTarget.url || saveMutation.isPending
+                }
+                onClick={() => saveMutation.mutate(editingTarget)}
+              >
+                {saveMutation.isPending && (
+                  <Loader2 className="size-3.5 animate-spin" />
+                )}
+                Save target
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-        <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-start gap-2">
-          <Hash className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground">
-            Payload schema: <code className="font-mono">{"{ event, kioskId, employeeCode, score, timestamp, signature }"}</code>.
-            HMAC-SHA256 signed with the webhook secret stored on the backend.
-          </p>
+      {/* Target list */}
+      {isLoading ? (
+        <Card>
+          <CardContent className="py-8">
+            <div className="space-y-2">
+              {[0, 1].map((i) => (
+                <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (state?.targets ?? []).length === 0 ? (
+        <Card>
+          <CardContent className="py-10 flex flex-col items-center text-center">
+            <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-3">
+              <Webhook className="size-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">No webhook targets configured</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+              Add a Slack, Teams, or generic HTTP endpoint to receive real-time
+              security alerts for denied scans, spoof attempts, and lockdowns.
+            </p>
+            <Button size="sm" className="mt-4" onClick={startNew}>
+              <Plus className="size-3.5" />
+              Add your first webhook
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {(state?.targets ?? []).map((t) => (
+            <Card key={t.id} className="p-0">
+              <div className="flex items-center justify-between gap-3 p-3.5">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div
+                    className={cn(
+                      "size-9 rounded-lg flex items-center justify-center shrink-0",
+                      t.enabled
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {t.type === "slack" ? (
+                      <Hash className="size-4" />
+                    ) : t.type === "teams" ? (
+                      <Users className="size-4" />
+                    ) : (
+                      <Webhook className="size-4" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold truncate">{t.name}</p>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] capitalize"
+                      >
+                        {t.type}
+                      </Badge>
+                      {t.enabled ? (
+                        <Badge variant="outline" className="text-[10px] text-success">
+                          <CheckCircle2 className="size-2.5 mr-1" />
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                          <XCircle className="size-2.5 mr-1" />
+                          Disabled
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground font-mono truncate mt-0.5">
+                      {t.url}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {t.events.map((ev) => (
+                        <Badge
+                          key={ev}
+                          variant="secondary"
+                          className="text-[9px] font-normal capitalize"
+                        >
+                          {ev.replace("_", " ")}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => {
+                      setEditingTarget({
+                        id: t.id,
+                        name: t.name,
+                        url: t.url,
+                        type: t.type,
+                        enabled: t.enabled,
+                        secret: t.secret ?? "",
+                        events: t.events,
+                      });
+                      setShowForm(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    disabled={removeMutation.isPending}
+                    onClick={() => {
+                      if (confirm(`Remove webhook target "${t.name}"?`)) {
+                        removeMutation.mutate(t.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
+      )}
 
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={test}>
-            <Send className="size-4" />
-            Send test alert
-          </Button>
-          <Button onClick={save}>
-            Save configuration
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-start gap-2">
+        <Hash className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+        <p className="text-xs text-muted-foreground">
+          Payload schema: <code className="font-mono">{"{ source, event_type, severity, title, message, kiosk_id, employee_code, timestamp }"}</code>.
+          Slack/Teams payloads are formatted per their incoming-webhook specs.
+          Generic endpoints receive the raw JSON + an <code className="font-mono">X-SentinelKiosk-Signature: sha256=…</code> header (HMAC of the body with the signing secret).
+        </p>
+      </div>
+    </div>
   );
 }

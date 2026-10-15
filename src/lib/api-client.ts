@@ -118,6 +118,48 @@ export const apiClient = {
         total: number;
         page: number;
       }>(`/employees/${id}/scan-history?page=${page}`),
+    stats: (id: string) =>
+      api<{
+        totalScans: number;
+        granted: number;
+        denied: number;
+        grantRate: number;
+        avgLatencyMs: number;
+        avgMatchScore: number;
+        offlineCount: number;
+        daily: { date: string; granted: number; denied: number }[];
+        byKiosk: { kioskId: string; granted: number; denied: number }[];
+        scoreDistribution: { bin: string; count: number }[];
+        recent: {
+          id: number;
+          kioskId: string;
+          decision: string;
+          faceMatchStatus: string | null;
+          faceMatchScore: number | null;
+          latencyMs: number | null;
+          offline: boolean;
+          createdAt: string;
+        }[];
+      }>(`/employees/${id}/stats`),
+    importCsv: (rows: {
+      employeeCode: string;
+      fullName: string;
+      departmentCode?: string;
+      designation?: string;
+      accessLevel?: number;
+    }[]) =>
+      api<{
+        successCount: number;
+        errorCount: number;
+        errors: { row: number; message: string }[];
+        created: {
+          id: string;
+          employeeCode: string;
+          fullName: string;
+          cardToken: string;
+        }[];
+        skipped: { row: number; employeeCode: string; reason: string }[];
+      }>("/employees/import", { method: "POST", body: { rows } }),
   },
   enrollment: {
     capture: (
@@ -226,6 +268,74 @@ export const apiClient = {
           employeeCode: string | null;
         }[]
       >("/revocations"),
+  },
+  webhooks: {
+    get: () =>
+      api<{
+        targets: {
+          id: string;
+          name: string;
+          url: string;
+          type: string;
+          enabled: boolean;
+          secret?: string;
+          events: string[];
+          createdAt: string;
+        }[];
+        globalEnabled: boolean;
+        lastDispatchAt: string | null;
+        dispatchCount: number;
+        failureCount: number;
+      }>("/webhooks/config"),
+    save: (target: {
+      id?: string;
+      name: string;
+      url: string;
+      type: string;
+      enabled: boolean;
+      secret?: string;
+      events: string[];
+    }) => api("/webhooks/config", { method: "POST", body: target }),
+    remove: (id: string) =>
+      api(`/webhooks/config?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
+    setGlobal: (globalEnabled: boolean) =>
+      api("/webhooks/config", { method: "PATCH", body: { globalEnabled } }),
+    test: (body?: {
+      type?: string;
+      title?: string;
+      message?: string;
+      severity?: string;
+    }) => api("/webhooks/test", { method: "POST", body: body ?? {} }),
+    exportAlerts: (params: {
+      from?: string;
+      to?: string;
+      decision?: string;
+      kiosk_id?: string;
+      limit?: number;
+    } = {}) => {
+      const q = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) q.set(k, String(v));
+      });
+      return api<{
+        exported_at: string;
+        count: number;
+        events: Record<string, unknown>[];
+      }>(`/webhooks/alerts/export?${q.toString()}`);
+    },
+    exportCsvUrl: (params: {
+      from?: string;
+      to?: string;
+      decision?: string;
+      kiosk_id?: string;
+      limit?: number;
+    } = {}) => {
+      const q = new URLSearchParams({ format: "csv" });
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) q.set(k, String(v));
+      });
+      return `${API_PREFIX}/webhooks/alerts/export?${q.toString()}`;
+    },
   },
   mobile: {
     login: (employeeCode: string) =>

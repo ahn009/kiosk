@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
   Activity,
   ShieldCheck,
@@ -13,6 +14,8 @@ import {
   ScanFace,
   ShieldAlert,
   ArrowRight,
+  Clock,
+  Radio,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -47,13 +50,20 @@ import {
 } from "../lib/admin-utils";
 
 export function DashboardView() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: () => apiClient.dashboard.stats(),
     refetchInterval: 30_000,
   });
 
   const setSection = useAppStore((s) => s.setAdminSection);
+
+  // Live clock
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const hourData =
     stats?.scansByHour.map((h) => ({
@@ -71,6 +81,32 @@ export function DashboardView() {
 
   return (
     <ViewContainer>
+      {/* Live status bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-gradient-to-r from-primary/5 via-card to-card px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+            <span className="relative inline-flex size-2 rounded-full bg-success" />
+          </span>
+          <span className="text-sm font-medium">Live</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">
+            Auto-refreshing every 30s
+          </span>
+        </div>
+        <div className="flex items-center gap-4">
+          {dataUpdatedAt && (
+            <span className="text-[11px] text-muted-foreground hidden md:flex items-center gap-1.5">
+              <Radio className="size-3" />
+              Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+            </span>
+          )}
+          <span className="text-sm font-mono tabular-nums flex items-center gap-1.5">
+            <Clock className="size-3.5 text-muted-foreground" />
+            {now.toLocaleTimeString()}
+          </span>
+        </div>
+      </div>
+
       {/* Lockdown banner */}
       {stats?.lockdownActive && (
         <motion.div
