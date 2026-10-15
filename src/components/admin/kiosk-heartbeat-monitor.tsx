@@ -33,6 +33,23 @@ export function KioskHeartbeatMonitor({ kiosks }: { kiosks: KioskDTO[] }) {
       toast.error(e?.error ?? "Heartbeat failed"),
   });
 
+  const simulate = useMutation({
+    mutationFn: () => apiClient.kiosks.simulate(),
+    onSuccess: (data) => {
+      if (data.changed) {
+        toast[data.severity === "critical" ? "error" : data.severity === "warning" ? "warning" : "success"](
+          data.title,
+          { description: data.message }
+        );
+      } else {
+        toast.info(data.title, { description: data.message });
+      }
+      qc.invalidateQueries({ queryKey: ["kiosks"] });
+    },
+    onError: (e: { error?: string }) =>
+      toast.error(e?.error ?? "Simulation failed"),
+  });
+
   const online = kiosks.filter((k) => k.status === "online").length;
   const offline = kiosks.filter((k) => k.status === "offline").length;
   const lockdown = kiosks.filter((k) => k.status === "lockdown").length;
@@ -69,19 +86,34 @@ export function KioskHeartbeatMonitor({ kiosks }: { kiosks: KioskDTO[] }) {
             </p>
           </div>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => heartbeat.mutate()}
-          disabled={heartbeat.isPending}
-        >
-          {heartbeat.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Zap className="size-3.5" />
-          )}
-          Simulate heartbeats
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => simulate.mutate()}
+            disabled={simulate.isPending}
+          >
+            {simulate.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Activity className="size-3.5" />
+            )}
+            Simulate event
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => heartbeat.mutate()}
+            disabled={heartbeat.isPending}
+          >
+            {heartbeat.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Zap className="size-3.5" />
+            )}
+            Sync all
+          </Button>
+        </div>
       </div>
 
       {/* Heartbeat bars */}

@@ -64,6 +64,20 @@ const DECISIONS: Decision[] = [
   "supervisor_override",
 ];
 
+// Human-readable descriptions for spoof/liveness flags shown in the detail drawer.
+const spoofFlagDescriptions: Record<string, string> = {
+  paper_detected: "A printed photo or paper face was detected in front of the camera.",
+  screen_detected: "A screen/display replay attack was detected (phone/tablet held up).",
+  mask_detected: "A 3D mask or non-live surface was detected.",
+  liveness_failed: "The silent liveness check (MiniFASNet) scored below the 0.87 threshold.",
+  challenge_failed: "The blink/turn challenge-response was not completed within the time window.",
+  face_too_small: "The detected face was smaller than the 112px minimum.",
+  multiple_faces: "More than one face was detected in the frame.",
+  low_light: "Insufficient lighting degraded image quality below the threshold.",
+  blur_detected: "Motion blur or defocus reduced sharpness below the Laplacian variance threshold.",
+  replay_detected: "A repeated nonce/timestamp was detected (possible network replay).",
+};
+
 export function AuditView() {
   const admin = useAppStore((s) => s.admin);
 
@@ -489,15 +503,28 @@ function EventDetailSheet({
 
             {/* Snapshot */}
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
-                Snapshot
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 flex items-center justify-between">
+                <span>Snapshot</span>
+                {canViewSnapshot && (
+                  <span className="text-[9px] text-muted-foreground normal-case tracking-normal flex items-center gap-1">
+                    <Eye className="size-2.5" />
+                    view logged
+                  </span>
+                )}
               </p>
               <div className="relative aspect-[4/3] rounded-lg overflow-hidden border border-border bg-grid">
+                {/* Animated scanline */}
+                <div className="absolute inset-0 overflow-hidden">
+                  <div className="absolute inset-x-0 h-px bg-primary/30 animate-scanline" />
+                </div>
                 <div className="absolute inset-0 flex items-center justify-center text-center p-6">
                   <div>
                     <Eye className="size-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground font-mono">
                       {event.snapshotPath ?? "no path"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-1">
+                      AES-256-GCM encrypted · MinIO
                     </p>
                   </div>
                 </div>
@@ -505,6 +532,16 @@ function EventDetailSheet({
                   <div className="absolute inset-0 flex items-center justify-center bg-destructive/5 pointer-events-none">
                     <div className="rotate-[-12deg] text-[10px] font-bold text-destructive/30 tracking-widest border-2 border-destructive/30 px-3 py-1 rounded">
                       CONFIDENTIAL
+                    </div>
+                  </div>
+                )}
+                {!canViewSnapshot && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/80 pointer-events-none">
+                    <div className="text-center">
+                      <ShieldAlert className="size-6 text-muted-foreground mx-auto mb-1" />
+                      <p className="text-[10px] text-muted-foreground">
+                        Insufficient role to view snapshot
+                      </p>
                     </div>
                   </div>
                 )}
@@ -578,16 +615,66 @@ function EventDetailSheet({
               </div>
             )}
 
-            {/* Spoof flags */}
+            {/* Spoof flags deep inspection */}
             {event.spoofFlags && Object.keys(event.spoofFlags).length > 0 && (
               <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3">
                 <p className="text-[11px] uppercase tracking-wider text-destructive mb-2 flex items-center gap-1">
                   <ShieldAlert className="size-3" />
                   Spoof / Liveness Flags
                 </p>
-                <pre className="text-[11px] font-mono whitespace-pre-wrap break-all">
-                  {JSON.stringify(event.spoofFlags, null, 2)}
-                </pre>
+                <div className="space-y-1.5">
+                  {Object.entries(event.spoofFlags).map(([key, val]) => {
+                    const desc = spoofFlagDescriptions[key] ?? "Unknown flag";
+                    const flagged = val === true || val === "true";
+                    return (
+                      <div
+                        key={key}
+                        className={cn(
+                          "flex items-start gap-2 rounded-md border px-2 py-1.5",
+                          flagged
+                            ? "border-destructive/40 bg-destructive/10"
+                            : "border-border bg-background/50"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "size-2 rounded-full mt-1 shrink-0",
+                            flagged ? "bg-destructive" : "bg-muted-foreground"
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <code className="text-[11px] font-mono font-semibold">
+                              {key}
+                            </code>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[9px]",
+                                flagged
+                                  ? "bg-destructive/15 text-destructive border-destructive/30"
+                                  : "bg-muted text-muted-foreground"
+                              )}
+                            >
+                              {String(val)}
+                            </Badge>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {desc}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <details className="mt-2">
+                  <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground">
+                    Raw JSON
+                  </summary>
+                  <pre className="text-[10px] font-mono whitespace-pre-wrap break-all mt-1 p-2 rounded bg-background/50">
+                    {JSON.stringify(event.spoofFlags, null, 2)}
+                  </pre>
+                </details>
               </div>
             )}
 

@@ -209,6 +209,18 @@ export const apiClient = {
         "/kiosks/heartbeat",
         { method: "POST" }
       ),
+    simulate: () =>
+      api<{
+        ok: boolean;
+        kioskId: string;
+        name: string;
+        previousStatus: string;
+        newStatus: string;
+        changed: boolean;
+        title: string;
+        message: string;
+        severity: string;
+      }>("/kiosks/simulate", { method: "POST" }),
     stats: (id: string) =>
       api<{
         kioskId: string;

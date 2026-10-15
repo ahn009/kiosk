@@ -1312,3 +1312,60 @@ Unresolved / Notes:
   persistence, kiosk auto-status-change simulation, audit-trail detail
   drawer enhancements (spoof-flag deep inspection), mobile companion
   push notification wiring.
+
+---
+Task ID: 12
+Agent: orchestrator (main) — webDevReview round 6
+Task: QA, audit detail drawer enhancements, kiosk auto-status simulation
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+- NEW FEATURE: Audit detail drawer enhancements
+  - Spoof-flag deep inspection: replaced raw JSON dump with a structured panel
+    that parses each flag into a row (status dot, key, value badge, human-
+    readable description). Added spoofFlagDescriptions map with explanations
+    for paper_detected, screen_detected, mask_detected, liveness_failed,
+    challenge_failed, face_too_small, multiple_faces, low_light, blur_detected,
+    replay_detected. Collapsible "Raw JSON" disclosure for the full payload.
+    Flagged (true) values get destructive styling; false values are muted.
+  - Enhanced snapshot placeholder: animated scanline overlay, "AES-256-GCM
+    encrypted · MinIO" note, "view logged" indicator (when canViewSnapshot),
+    role-gated overlay ("Insufficient role to view snapshot" for viewers).
+  - Verified: opened a denied event with spoof flags → "paper_detected" flag
+    shown with description "A printed photo or paper face was detected in
+    front of the camera." + collapsible Raw JSON. Console clean.
+- NEW FEATURE: Kiosk auto-status-change simulation
+  - Backend: POST /api/v1/kiosks/simulate — picks a random kiosk, transitions
+    its status (online→offline 40% / maintenance 30% / heartbeat 30%;
+    offline/maintenance→online 80%), updates lastSyncAt, emits a real-time
+    kiosk_status alert (critical for offline, warning for maintenance, info
+    for recovery/heartbeat). Returns the transition details.
+  - api-client.kiosks.simulate() helper.
+  - Added "Simulate event" button to the KioskHeartbeatMonitor (renamed
+    "Simulate heartbeats" → "Sync all" for clarity). Two-button layout.
+    Toasts use severity-appropriate variants (error/warning/success/info).
+  - Verified: clicked Simulate event → KSK-003 entered maintenance (bell
+    badge incremented, alerts service received "Kiosk KSK-003 entered
+    maintenance" warning). Clicked again → kiosk recovered (info toast).
+    Sync all → all online kiosks synced. Console clean. Restored KSK-003
+    to online after testing.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Audit detail: spoof-flag deep inspection + enhanced snapshot.
+  2. Kiosk simulate: status changes + real-time alerts.
+  3. All previous features still work.
+
+Stage Summary:
+- 2 features: audit detail drawer enhancements (spoof-flag inspection +
+  snapshot polish) + kiosk auto-status simulation (random transitions +
+  real-time alerts + live bell integration).
+- App stable; dev server stayed up.
+
+Unresolved / Notes:
+- Dev server (port 3000) could stop abruptly (round 4). If preview blank:
+  `ss -tlnp | grep 3000` then `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, mobile companion push notification wiring, audit-trail CSV
+  export of filtered infinite-scroll results, kiosk detail sheet live
+  scan-streaming via alerts socket.
