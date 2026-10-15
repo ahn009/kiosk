@@ -175,6 +175,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Emit a real-time "scan" event for the audit-trail live feed (all decisions).
+  emitAlert({
+    type: "scan",
+    severity: decision === "granted" ? "info" : decision === "challenge_failed" ? "warning" : "warning",
+    title: decision === "granted" ? "Access granted" : "Access denied",
+    message: `${emp?.fullName ?? "Unknown"} (${emp?.employeeCode ?? "—"}) · ${decision} · score ${(matchScore * 100).toFixed(0)}%`,
+    kioskId: pending.kioskId,
+    employeeCode: emp?.employeeCode ?? null,
+    timestamp: new Date().toISOString(),
+  });
+
   const response: VerifyFaceResponse = {
     decision,
     matchScore: Number(matchScore.toFixed(4)),

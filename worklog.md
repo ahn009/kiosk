@@ -1197,3 +1197,59 @@ Unresolved / Notes:
   calibration history persistence, role-based dashboard variants, kiosk
   heartbeat simulation (auto status changes), audit-trail real-time
   streaming via the alerts socket.
+
+---
+Task ID: 10
+Agent: orchestrator (main) — webDevReview round 4
+Task: QA, audit-trail real-time streaming, kiosk heartbeat monitor
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+  NOTE: dev server (port 3000) had stopped mid-round (process gone, no error
+  in log — abrupt exit). Restarted via `bun run dev &` (background). The
+  instruction says it auto-runs but it was down; restarted to recover.
+- NEW FEATURE: Audit-trail real-time streaming
+  - Added a "scan" event emit to kiosk verify-face (ALL decisions, incl.
+    granted) so live scan events flow to the audit view in real time.
+  - src/components/admin/live-audit-feed.tsx — side panel for the audit view
+    that subscribes to the alerts socket, filters to scan/denied/spoof/
+    lockdown events, shows animated rows (severity-colored border, icon,
+    title, message, kiosk id, employee code, relative time), "No live
+    events" empty state, WS-connection badge.
+  - Wired into audit-view.tsx as a 2-column grid (results table + live feed)
+    on desktop, stacks on mobile.
+  - Verified: emitted a test "scan" event via curl → appeared in the live
+    audit feed within 2s with full details (kiosk, employee, score).
+- NEW FEATURE: Kiosk heartbeat monitor
+  - Backend: POST /api/v1/kiosks/heartbeat — updates lastSyncAt for all
+    online/maintenance kiosks, emits a kiosk_status info event (occasionally),
+    returns { ok, updated, timestamp }.
+  - api-client.kiosks.heartbeat() helper.
+  - src/components/admin/kiosk-heartbeat-monitor.tsx — monitor card with
+    summary (online/maintenance/lockdown/offline/stale counts), "Simulate
+    heartbeats" button, per-kiosk status bars (synced=green pulse / stale=
+    amber / status dot for non-online). Stale = online but lastSync > 2min.
+  - Wired into kiosks-view below the existing heartbeat map.
+  - Verified: opened kiosks view → "4 online · 4 stale" → clicked Simulate
+    heartbeats → all 4 show "synced", toast confirmed, no console errors.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Live audit feed: real-time scan events stream in.
+  2. Heartbeat monitor: simulate → all kiosks synced.
+  3. All previous features still work.
+
+Stage Summary:
+- 2 features: audit-trail real-time streaming (live feed panel + scan event
+  emit) + kiosk heartbeat monitor (simulate + per-kiosk sync status).
+- Dev server recovered after mid-round crash.
+- App now has real-time audit + heartbeat monitoring.
+
+Unresolved / Notes:
+- Dev server (port 3000) stopped abruptly mid-round (no error logged).
+  Restarted manually. Risk: could happen again — the alerts service (3003)
+  + Caddy (81) stayed up. If the preview goes blank, check `ss -tlnp | grep
+  3000` and restart with `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, role-based dashboard variants, audit-trail infinite scroll,
+  kiosk auto-status-change simulation (random offline/maintenance events).

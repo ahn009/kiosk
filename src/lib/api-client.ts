@@ -202,6 +202,11 @@ export const apiClient = {
         method: "PATCH",
         body,
       }),
+    heartbeat: () =>
+      api<{ ok: boolean; updated: number; timestamp: string }>(
+        "/kiosks/heartbeat",
+        { method: "POST" }
+      ),
     stats: (id: string) =>
       api<{
         kioskId: string;

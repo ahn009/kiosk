@@ -49,6 +49,7 @@ import {
 } from "../lib/ui-bits";
 import { kioskStatusClass, formatRelative, asArray } from "../lib/admin-utils";
 import { KioskDetailSheet } from "./kiosk-detail-sheet";
+import { KioskHeartbeatMonitor } from "../kiosk-heartbeat-monitor";
 
 export function KiosksView() {
   const { data: kiosksRaw, isLoading } = useQuery({
@@ -124,6 +125,9 @@ export function KiosksView() {
             ))}
         </div>
       </Card>
+
+      {/* Heartbeat monitor */}
+      <KioskHeartbeatMonitor kiosks={kiosks} />
 
       {/* Kiosk cards */}
       {isLoading ? (

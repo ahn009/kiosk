@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { apiClient } from "@/lib/api-client";
 import type { ScanEventDTO, Decision, KioskDTO } from "@/lib/types";
+import { LiveAuditFeed } from "@/components/admin/live-audit-feed";
 import {
   ViewContainer,
   EmptyState,
@@ -261,8 +262,9 @@ export function AuditView() {
         )}
       </Card>
 
-      {/* Results table */}
-      <Card className="p-0 overflow-hidden">
+      {/* Results table + live feed */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <Card className="p-0 overflow-hidden">
         {isLoading ? (
           <div className="p-4">
             <TableSkeleton rows={10} cols={7} />
@@ -389,6 +391,10 @@ export function AuditView() {
           </div>
         )}
       </Card>
+
+        {/* Live audit stream */}
+        <LiveAuditFeed />
+      </div>
 
       {/* Pagination */}
       {data && data.total > 25 && (
