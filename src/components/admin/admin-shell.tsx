@@ -19,6 +19,7 @@ import {
   X,
   ArrowLeft,
   Lock,
+  Search as SearchIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -53,6 +54,7 @@ import { KiosksView } from "./views/kiosks-view";
 import { CalibrationView } from "./views/calibration-view";
 import { SecurityView } from "./views/security-view";
 import { LiveAlertBell } from "./live-alert-bell";
+import { CommandPalette } from "./command-palette";
 
 interface NavItem {
   id: AdminSection;
@@ -166,6 +168,7 @@ export function AdminShell() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <CommandPalette />
       {/* Header */}
       <header className="sticky top-0 z-30 flex items-center h-14 px-3 sm:px-4 gap-2 border-b border-border bg-card/80 backdrop-blur-md">
         {/* Mobile nav trigger */}
@@ -226,6 +229,19 @@ export function AdminShell() {
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Command palette trigger */}
+          <button
+            onClick={() => {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+            }}
+            className="hidden sm:flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-border bg-card hover:bg-accent/50 text-xs text-muted-foreground transition-colors"
+            aria-label="Open command palette"
+          >
+            <SearchIcon className="size-3.5" />
+            <span>Search…</span>
+            <kbd className="px-1 py-0.5 rounded border border-border bg-muted font-mono text-[9px]">⌘K</kbd>
+          </button>
+
           {/* Live alerts bell */}
           <LiveAlertBell />
 

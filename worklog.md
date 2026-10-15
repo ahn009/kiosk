@@ -1471,3 +1471,55 @@ Unresolved / Notes:
   wizard live camera capture polish, threshold calibration history
   persistence, mobile companion push notification wiring, global keyboard
   command palette (Cmd+K), dashboard live KPI counter via alerts socket.
+
+---
+Task ID: 15
+Agent: orchestrator (main) — webDevReview round 9
+Task: QA, global command palette (Cmd+K), dashboard live KPI counter
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+- NEW FEATURE: Global command palette (Cmd+K)
+  - src/components/admin/command-palette.tsx — uses the existing cmdk
+    (Command primitive) + CommandDialog. Global Cmd+K / Ctrl+K shortcut
+    toggles the palette. Navigate group: Dashboard, Employees, Enrollment,
+    Audit Trail, Kiosks, Calibration, Security Center. Quick Actions group:
+    Go to Lockdown control, Toggle dark/light theme, Back to Launcher, Sign
+    out. Tips group with ⌘K hint. Fuzzy search across labels + keywords.
+  - Wired into admin-shell.tsx at the root level (overlay) + a "Search… ⌘K"
+    button in the header next to the alerts bell (hidden on mobile).
+  - Verified: clicked the Search button → palette opened with Navigate +
+    Quick Actions groups → typed "audit" → filtered to "Audit Trail" →
+    Enter → navigated to Audit Trail. Cmd+K (dispatched via eval) opens the
+    palette. Console clean.
+- NEW FEATURE: Dashboard live KPI counter via alerts socket
+  - src/components/admin/live-kpi-row.tsx — LiveKpiRow component replaces the
+    static KPI row. The "Scans Today" card shows a "+N live" pulsing badge
+    + an animated counter (AnimatePresence popLayout) that increments in
+    real-time as scan events stream in via the alerts WebSocket. Base count
+    from the 30s stats refresh + live delta from the socket. Grant Rate,
+    Active Kiosks, Enrolled Employees cards are static (refresh every 30s).
+  - Wired into dashboard-view.tsx, replacing the old KpiCard row. Removed
+    the now-unused KpiCard import.
+  - Verified: dashboard showed "11 granted · 9 denied" → emitted a test scan
+    → counter incremented to "12 granted · 9 denied" within 2s + "+5 live"
+    badge appeared. Console clean.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Command palette: Cmd+K opens, search filters, Enter navigates.
+  2. Live KPI: scan counter increments in real-time.
+  3. All previous features still work.
+
+Stage Summary:
+- 2 features: global command palette (Cmd+K, fuzzy search, nav + actions) +
+  dashboard live KPI counter (WebSocket-driven animated counter + live badge).
+- App stable; dev server stayed up.
+
+Unresolved / Notes:
+- Dev server (port 3000) could stop abruptly (round 4). If preview blank:
+  `ss -tlnp | grep 3000` then `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, mobile companion push notification wiring, command palette
+  action for "simulate scan" / "trigger lockdown drill", dashboard live
+  grant-rate counter, export-filtered-CSV from command palette.

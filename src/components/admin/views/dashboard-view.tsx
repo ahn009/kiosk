@@ -38,8 +38,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/lib/store";
 import { apiClient } from "@/lib/api-client";
 import { DashboardScanTicker } from "@/components/admin/dashboard-scan-ticker";
+import { LiveKpiRow } from "@/components/admin/live-kpi-row";
 import {
-  KpiCard,
   ViewContainer,
   EmptyState,
   ScoreBar,
@@ -177,39 +177,8 @@ export function DashboardView() {
         </motion.div>
       )}
 
-      {/* KPI row */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          icon={ScanFace}
-          label="Scans Today"
-          value={isLoading ? 0 : stats?.scansToday ?? 0}
-          sub={`${stats?.grantedToday ?? 0} granted · ${stats?.deniedToday ?? 0} denied`}
-          loading={isLoading}
-        />
-        <KpiCard
-          icon={ShieldCheck}
-          label="Grant Rate"
-          value={isLoading ? "—" : formatPct(stats?.grantRate ?? 0)}
-          accent={isLoading ? "default" : (stats?.grantRate ?? 0) > 0.9 ? "success" : "warning"}
-          trend={(stats?.grantRate ?? 1) > 0.9 ? "up" : "down"}
-          loading={isLoading}
-        />
-        <KpiCard
-          icon={Cpu}
-          label="Active Kiosks"
-          value={isLoading ? 0 : stats?.activeKiosks ?? 0}
-          sub={`of ${stats?.totalKiosks ?? 0} deployed`}
-          accent="success"
-          loading={isLoading}
-        />
-        <KpiCard
-          icon={Users}
-          label="Enrolled Employees"
-          value={isLoading ? 0 : stats?.enrolledEmployees ?? 0}
-          sub={`of ${stats?.totalEmployees ?? 0} total`}
-          loading={isLoading}
-        />
-      </div>
+      {/* Live KPI row (real-time scan counter via alerts socket) */}
+      <LiveKpiRow stats={stats} isLoading={isLoading} />
 
       {/* Live activity ticker */}
       <DashboardScanTicker />
