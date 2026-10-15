@@ -1369,3 +1369,53 @@ Unresolved / Notes:
   persistence, mobile companion push notification wiring, audit-trail CSV
   export of filtered infinite-scroll results, kiosk detail sheet live
   scan-streaming via alerts socket.
+
+---
+Task ID: 13
+Agent: orchestrator (main) — webDevReview round 7
+Task: QA, audit CSV export-all, kiosk detail live scan-streaming
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+- NEW FEATURE: Audit-trail CSV export of all filtered results
+  - Replaced the single "Export CSV" button with two buttons: "Export loaded
+    (N)" (exports the currently accumulated infinite-scroll items) and
+    "Export all (N)" (fetches ALL matching records across all pages, up to
+    5000, then exports).
+  - exportCsv(all=false) — for loaded; exportCsv(all=true) — async fetches
+    pages 1..200 until totalPages reached, collects into a single array,
+    writes CSV, shows "Exported N records to CSV (all matching)" toast.
+  - Added `exporting` state with spinner + "Exporting…" label.
+  - Verified: audit view shows "114 records · 25 loaded" → clicked "Export
+    all (114)" → toast "Exported 114 records to CSV (all matching)". Console
+    clean.
+- NEW FEATURE: Kiosk detail sheet live scan-streaming
+  - Added LiveKioskScans component inside kiosk-detail-sheet.tsx that
+    subscribes to the alerts WebSocket (useAlertsSocket), filters to
+    type==="scan" && kioskId===kiosk.kioskId, shows animated rows (granted=
+    green border + check, denied=red border + x) with title + employee code
+    + score. "WS live"/"polling" connection badge. "No live scan events yet"
+    empty state. max-h-48 scroll container, 12 items max.
+  - Placed above the "Recent scans (last 30 days)" section, renamed the
+    latter for clarity.
+  - Verified: opened KSK-001 detail → "Live scans" + "WS live" → emitted a
+    test scan via curl for KSK-001 → "Access granted" + "EMP-1001 · score
+    96%" appeared in the live section within 2s. Console clean.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Audit export-all: full filtered export.
+  2. Kiosk detail live scans: real-time streaming via WS.
+  3. All previous features still work.
+
+Stage Summary:
+- 2 features: audit-trail full-filtered CSV export + kiosk detail sheet live
+  scan-streaming (WebSocket-filtered per kiosk).
+- App stable; dev server stayed up.
+
+Unresolved / Notes:
+- Dev server (port 3000) could stop abruptly (round 4). If preview blank:
+  `ss -tlnp | grep 3000` then `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, mobile companion push notification wiring, dashboard live
+  scan-counter via alerts socket, audit-trail keyboard shortcuts (j/k nav).

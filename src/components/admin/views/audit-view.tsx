@@ -151,12 +151,51 @@ export function AuditView() {
     setDateTo("");
   }
 
-  function exportCsv() {
-    if (items.length === 0) {
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv(all = false) {
+    if (items.length === 0 && !all) {
       toast.error("No records to export");
       return;
     }
-    const rows = items.map((e) => ({
+    if (all) {
+      setExporting(true);
+      try {
+        // Fetch all matching records (up to 5000) across all pages
+        const allItems: ScanEventDTO[] = [];
+        let page = 1;
+        const maxPages = 200; // 200 * 25 = 5000 max
+        while (page <= maxPages) {
+          const res = await apiClient.audit.scans({
+            kiosk_id: kioskFilter === "all" ? undefined : kioskFilter,
+            decision: decisionFilter === "all" ? undefined : decisionFilter,
+            from: dateFrom ? new Date(dateFrom).toISOString() : undefined,
+            to: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : undefined,
+            page,
+          });
+          allItems.push(...res.items);
+          if (res.page >= res.totalPages) break;
+          page += 1;
+        }
+        if (allItems.length === 0) {
+          toast.error("No records to export");
+          return;
+        }
+        writeCsv(allItems);
+        toast.success(`Exported ${allItems.length} records to CSV (all matching)`);
+      } catch {
+        toast.error("Failed to export all records");
+      } finally {
+        setExporting(false);
+      }
+    } else {
+      writeCsv(items);
+      toast.success(`Exported ${items.length} records to CSV (loaded)`);
+    }
+  }
+
+  function writeCsv(rows: ScanEventDTO[]) {
+    const mapped = rows.map((e) => ({
       id: e.id,
       time: e.createdAt,
       kiosk: e.kioskId,
@@ -171,8 +210,7 @@ export function AuditView() {
       snapshot: e.snapshotPath ?? "",
       token_hash: e.tokenHash ?? "",
     }));
-    downloadCsv(`audit-scans-${new Date().toISOString().slice(0, 10)}.csv`, rows);
-    toast.success(`Exported ${rows.length} records to CSV`);
+    downloadCsv(`audit-scans-${new Date().toISOString().slice(0, 10)}.csv`, mapped);
   }
 
   const activeFilters =
@@ -195,10 +233,21 @@ export function AuditView() {
             Immutable log of every scan event · {totalCount} records matching filters · {loadedCount} loaded
           </p>
         </div>
-        <Button variant="outline" onClick={exportCsv} disabled={items.length === 0}>
-          <Download className="size-4" />
-          Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => exportCsv(false)} disabled={items.length === 0}>
+            <Download className="size-4" />
+            Export loaded ({loadedCount})
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => exportCsv(true)}
+            disabled={exporting || totalCount === 0}
+          >
+            {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            {exporting ? "Exporting…" : `Export all (${totalCount})`}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

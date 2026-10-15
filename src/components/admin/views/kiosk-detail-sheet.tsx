@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { useAlertsSocket, type AlertEvent } from "@/hooks/use-alerts-socket";
 import {
   Sheet,
   SheetContent,
@@ -344,11 +345,14 @@ export function KioskDetailSheet({
             </div>
           </section>
 
+          {/* Live scans (real-time WebSocket stream) */}
+          <LiveKioskScans kioskId={kiosk.kioskId} />
+
           {/* Recent scans */}
           <section>
             <h3 className="text-sm font-semibold flex items-center gap-1.5 mb-3">
               <Clock className="size-4 text-primary" />
-              Recent scans
+              Recent scans (last 30 days)
             </h3>
             {isLoading ? (
               <div className="space-y-2">
@@ -423,5 +427,85 @@ function KioskStat({
       </div>
       <p className="text-[10px] text-muted-foreground mt-1">{label}</p>
     </div>
+  );
+}
+
+// Live scan stream for a specific kiosk via the WebSocket alerts service.
+function LiveKioskScans({ kioskId }: { kioskId: string }) {
+  const { connected, alerts } = useAlertsSocket();
+  // Filter to scan events for THIS kiosk
+  const live = alerts.filter(
+    (a) => a.type === "scan" && a.kioskId === kioskId
+  );
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">
+          <Activity className="size-4 text-primary" />
+          Live scans
+        </h3>
+        <span className="flex items-center gap-1.5">
+          <span className="relative flex size-1.5">
+            {connected && (
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+            )}
+            <span
+              className={cn(
+                "relative inline-flex size-1.5 rounded-full",
+                connected ? "bg-success" : "bg-muted-foreground"
+              )}
+            />
+          </span>
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {connected ? "WS live" : "polling"}
+          </span>
+        </span>
+      </div>
+      {live.length === 0 ? (
+        <Card className="p-4 text-center">
+          <Radio className="size-5 text-muted-foreground/60 mx-auto mb-1.5" />
+          <p className="text-xs text-muted-foreground">
+            No live scan events yet · scans from {kioskId} will stream here in
+            real time
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-thin">
+          <AnimatePresence initial={false}>
+            {live.slice(0, 12).map((a) => {
+              const granted = a.title.toLowerCase().includes("granted");
+              return (
+                <motion.div
+                  key={a.id}
+                  layout
+                  initial={{ opacity: 0, x: -10, backgroundColor: "oklch(0.6 0.2 25 / 0.08)" }}
+                  animate={{ opacity: 1, x: 0, backgroundColor: "transparent" }}
+                  transition={{ duration: 0.5 }}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 border-l-2",
+                    granted ? "border-success/50" : "border-destructive/40"
+                  )}
+                >
+                  {granted ? (
+                    <CheckCircle2 className="size-3.5 text-success shrink-0" />
+                  ) : (
+                    <XCircle className="size-3.5 text-destructive shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold leading-tight truncate">
+                      {a.title}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {a.employeeCode ?? "Unknown"} · {a.message.split("·")[2]?.trim() ?? ""}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      )}
+    </section>
   );
 }
