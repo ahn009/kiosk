@@ -87,6 +87,8 @@ export function AuditView() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [detailEvent, setDetailEvent] = useState<ScanEventDTO | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState<number>(0);
+  const selectedRowRef = useRef<HTMLTableRowElement>(null);
 
   const { data: kiosksRaw } = useQuery({
     queryKey: ["kiosks-list"],
@@ -142,6 +144,42 @@ export function AuditView() {
     obs.observe(el);
     return () => obs.disconnect();
   }, [handleIntersect]);
+
+  // Auto-scroll the selected row into view on j/k navigation
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedIdx]);
+
+  // Keyboard navigation: j/k to move, Enter to open detail, Esc to close
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (detailEvent) {
+        if (e.key === "Escape") setDetailEvent(null);
+        return;
+      }
+      if (items.length === 0) return;
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIdx((i) => Math.min(items.length - 1, i + 1));
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIdx((i) => Math.max(0, i - 1));
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const ev = items[selectedIdx];
+        if (ev) setDetailEvent(ev);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [items, selectedIdx, detailEvent]);
+
+  // Reset selected index when filters change
+  useEffect(() => {
+    setSelectedIdx(0);
+  }, [kioskFilter, decisionFilter, employeeSearch, dateFrom, dateTo]);
 
   function resetFilters() {
     setKioskFilter("all");
@@ -379,12 +417,17 @@ export function AuditView() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((ev) => {
+                {items.map((ev, idx) => {
                   const hasSpoof = ev.spoofFlags && Object.keys(ev.spoofFlags).length > 0;
+                  const isSelected = idx === selectedIdx;
                   return (
                     <tr
                       key={ev.id}
-                      className="border-b border-border/40 hover:bg-accent/30 cursor-pointer transition-colors"
+                      ref={isSelected ? selectedRowRef : undefined}
+                      className={cn(
+                        "border-b border-border/40 hover:bg-accent/30 cursor-pointer transition-colors",
+                        isSelected && "bg-primary/10 ring-1 ring-inset ring-primary/30"
+                      )}
                       onClick={() => setDetailEvent(ev)}
                     >
                       <td className="py-2.5 px-4 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
@@ -495,6 +538,23 @@ export function AuditView() {
             End of audit trail · {loadedCount} of {totalCount} records loaded
           </p>
         ) : null}
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground py-1">
+        <span className="flex items-center gap-1">
+          <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-[9px]">j</kbd>
+          <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-[9px]">k</kbd>
+          navigate
+        </span>
+        <span className="flex items-center gap-1">
+          <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-[9px]">Enter</kbd>
+          open detail
+        </span>
+        <span className="flex items-center gap-1">
+          <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-[9px]">Esc</kbd>
+          close
+        </span>
       </div>
 
       <EventDetailSheet event={detailEvent} onClose={() => setDetailEvent(null)} canViewSnapshot={!!admin} />

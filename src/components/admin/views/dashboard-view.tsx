@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/lib/store";
 import { apiClient } from "@/lib/api-client";
+import { DashboardScanTicker } from "@/components/admin/dashboard-scan-ticker";
 import {
   KpiCard,
   ViewContainer,
@@ -209,6 +210,9 @@ export function DashboardView() {
           loading={isLoading}
         />
       </div>
+
+      {/* Live activity ticker */}
+      <DashboardScanTicker />
 
       {/* Charts row */}
       <div className="grid gap-4 lg:grid-cols-2">

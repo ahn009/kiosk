@@ -1419,3 +1419,55 @@ Unresolved / Notes:
   wizard live camera capture polish, threshold calibration history
   persistence, mobile companion push notification wiring, dashboard live
   scan-counter via alerts socket, audit-trail keyboard shortcuts (j/k nav).
+
+---
+Task ID: 14
+Agent: orchestrator (main) — webDevReview round 8
+Task: QA, dashboard live scan ticker, audit keyboard shortcuts (bug fix)
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+- NEW FEATURE: Dashboard live scan activity ticker
+  - src/components/admin/dashboard-scan-ticker.tsx — subscribes to the alerts
+    WebSocket, shows a "Live Activity" card with granted/denied/critical
+    counters + an animated scrolling list of recent scan/spoof/lockdown
+    events (severity-colored left border, icon, title, employee, kiosk, time).
+    "Real-time"/"Polling" connection badge. "Waiting for live scan events…"
+    empty state. max-h-32 scroll container, 8 items max.
+  - Wired into dashboard-view.tsx between the KPI row and the charts row.
+  - Verified: emitted a test scan for David Kim (EMP-1003) at KSK-003 →
+    appeared in the ticker within 2s with "Real-time" badge. Console clean.
+- NEW FEATURE: Audit-trail keyboard shortcuts
+  - j/k (or ArrowDown/ArrowUp) to move the selected row, Enter to open the
+    detail drawer, Escape to close it. Selected row gets a primary-tinted
+    background + ring. Auto-scrolls the selected row into view (smooth).
+    Filters out keypresses when typing in inputs/selects. Resets selection
+    when filters change.
+  - Added a keyboard-shortcuts hint bar at the bottom of the audit view
+    with styled <kbd> elements (j k navigate · Enter open detail · Esc close).
+  - BUG FIX: initial implementation placed the keyboard useEffect BEFORE the
+    `items` const was defined (temporal dead zone → "Application error: a
+    client-side exception"). Moved both useEffects (auto-scroll + keyboard)
+    to AFTER the `items`/`totalCount`/`loadedCount` declarations. Verified
+    the audit view renders correctly (25 rows) after the fix.
+  - Verified: pressed j 3× → 1 row selected (ring-primary) → Enter → "Scan
+    Event #111" detail drawer opened → Escape → closed. Console clean.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Dashboard ticker: real-time scan events stream in.
+  2. Audit keyboard: j/k/Enter/Esc navigation works.
+  3. All previous features still work.
+
+Stage Summary:
+- 2 features: dashboard live scan activity ticker (WebSocket) + audit-trail
+  keyboard shortcuts (j/k/Enter/Esc with auto-scroll + focus ring).
+- 1 bug fixed (temporal dead zone in audit view from misplaced useEffect).
+- App stable; dev server stayed up.
+
+Unresolved / Notes:
+- Dev server (port 3000) could stop abruptly (round 4). If preview blank:
+  `ss -tlnp | grep 3000` then `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, mobile companion push notification wiring, global keyboard
+  command palette (Cmd+K), dashboard live KPI counter via alerts socket.
