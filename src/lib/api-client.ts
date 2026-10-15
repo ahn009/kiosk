@@ -202,6 +202,43 @@ export const apiClient = {
         method: "PATCH",
         body,
       }),
+    stats: (id: string) =>
+      api<{
+        kioskId: string;
+        name: string;
+        location: string | null;
+        status: string;
+        thresholds: { granted: number; challenge: number };
+        challengeMode: string;
+        crlVersion: number;
+        lastSyncAt: string | null;
+        totalScans: number;
+        granted: number;
+        denied: number;
+        grantRate: number;
+        avgLatencyMs: number;
+        p95LatencyMs: number;
+        avgMatchScore: number;
+        offlineCount: number;
+        daily: { date: string; granted: number; denied: number }[];
+        scoreDistribution: { bin: string; count: number }[];
+        topEmployees: {
+          id: string;
+          employeeCode: string;
+          fullName: string;
+          photoUrl: string | null;
+          scanCount: number;
+        }[];
+        recent: {
+          id: number;
+          decision: string;
+          faceMatchStatus: string | null;
+          faceMatchScore: number | null;
+          latencyMs: number | null;
+          offline: boolean;
+          createdAt: string;
+        }[];
+      }>(`/kiosks/${id}/stats`),
     config: (kioskId: string) =>
       api<{
         kioskId: string;

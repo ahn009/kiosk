@@ -52,6 +52,7 @@ import { AuditView } from "./views/audit-view";
 import { KiosksView } from "./views/kiosks-view";
 import { CalibrationView } from "./views/calibration-view";
 import { SecurityView } from "./views/security-view";
+import { LiveAlertBell } from "./live-alert-bell";
 
 interface NavItem {
   id: AdminSection;
@@ -225,6 +226,9 @@ export function AdminShell() {
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Live alerts bell */}
+          <LiveAlertBell />
+
           {/* Theme toggle */}
           <Button
             variant="ghost"

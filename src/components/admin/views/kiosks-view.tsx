@@ -15,6 +15,7 @@ import {
   WifiOff,
   ShieldCheck,
   AlertCircle,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -47,6 +48,7 @@ import {
   EmptyState,
 } from "../lib/ui-bits";
 import { kioskStatusClass, formatRelative, asArray } from "../lib/admin-utils";
+import { KioskDetailSheet } from "./kiosk-detail-sheet";
 
 export function KiosksView() {
   const { data: kiosksRaw, isLoading } = useQuery({
@@ -57,6 +59,7 @@ export function KiosksView() {
   const kiosks = kiosksRaw ?? [];
 
   const [editing, setEditing] = useState<KioskDTO | null>(null);
+  const [detail, setDetail] = useState<KioskDTO | null>(null);
 
   return (
     <ViewContainer>
@@ -140,7 +143,7 @@ export function KiosksView() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {kiosks.map((k) => (
-            <KioskCard key={k.id} kiosk={k} onEdit={() => setEditing(k)} />
+            <KioskCard key={k.id} kiosk={k} onEdit={() => setEditing(k)} onView={() => setDetail(k)} />
           ))}
         </div>
       )}
@@ -148,11 +151,13 @@ export function KiosksView() {
       {editing && (
         <KioskConfigDialog kiosk={editing} onClose={() => setEditing(null)} />
       )}
+
+      <KioskDetailSheet kiosk={detail} open={!!detail} onOpenChange={(o) => !o && setDetail(null)} />
     </ViewContainer>
   );
 }
 
-function KioskCard({ kiosk, onEdit }: { kiosk: KioskDTO; onEdit: () => void }) {
+function KioskCard({ kiosk, onEdit, onView }: { kiosk: KioskDTO; onEdit: () => void; onView: () => void }) {
   return (
     <Card className="p-5 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
@@ -220,10 +225,16 @@ function KioskCard({ kiosk, onEdit }: { kiosk: KioskDTO; onEdit: () => void }) {
         <span className="text-[11px] text-muted-foreground">
           mode: <span className="font-mono">{kiosk.challengeMode}</span>
         </span>
-        <Button size="sm" variant="outline" onClick={onEdit}>
-          <Settings2 className="size-3.5" />
-          Configure
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" onClick={onView}>
+            <Eye className="size-3.5" />
+            Details
+          </Button>
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            <Settings2 className="size-3.5" />
+            Configure
+          </Button>
+        </div>
       </div>
     </Card>
   );

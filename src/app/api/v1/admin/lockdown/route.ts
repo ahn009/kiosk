@@ -8,6 +8,7 @@ import {
   logAdminAction,
 } from "@/lib/auth-runtime";
 import { dispatchAlert } from "@/lib/webhook-store";
+import { emitAlert } from "@/lib/emit-alert";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,15 @@ export async function POST(req: NextRequest) {
     timestamp: new Date().toISOString(),
   }).catch(() => {});
 
+  // Push to real-time WebSocket alerts feed for connected dashboards
+  emitAlert({
+    type: "lockdown",
+    severity: "critical",
+    title: "System lockdown engaged",
+    message: `Emergency lockdown activated by ${session.email}. Reason: ${body.reason}.`,
+    timestamp: new Date().toISOString(),
+  });
+
   return ok({
     ok: true,
     lockdownActive: updated.lockdownActive,
@@ -110,6 +120,15 @@ export async function DELETE(req: NextRequest) {
       lockdownActive: updated.lockdownActive,
       crlVersion: updated.crlVersion,
     },
+  });
+
+  // Push real-time alert: lockdown cleared
+  emitAlert({
+    type: "kiosk_status",
+    severity: "info",
+    title: "Lockdown cleared",
+    message: `Lockdown cleared by ${session.email}. Kiosks restored to online.`,
+    timestamp: new Date().toISOString(),
   });
 
   return ok({ ok: true, lockdownActive: false, crlVersion: updated.crlVersion });

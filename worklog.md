@@ -1121,3 +1121,79 @@ Unresolved / Notes:
   per-kiosk detail page with heartbeat + sync history, enrollment wizard live
   camera capture polish, threshold calibration history persistence, role-
   based dashboard variants.
+
+---
+Task ID: 9
+Agent: orchestrator (main) — webDevReview round 3
+Task: QA, WebSocket real-time alerts, per-kiosk detail sheet
+
+Work Log:
+- QA: All admin views + launcher cycled via agent-browser — no console errors.
+  App stable through Caddy (port 81) AND direct (port 3000).
+- NEW FEATURE: Real-time alerts WebSocket mini-service + live alert bell
+  - mini-services/alerts-service/ — independent bun project on port 3003,
+    socket.io server (path "/sk-alerts/") + HTTP routes (/health, /recent,
+    /emit). In-memory recent-alerts buffer (50 max), connected-clients count,
+    graceful CORS. Started via `bun run dev` (hot-reload).
+  - src/lib/emit-alert.ts — server-side helper that POSTs alerts to the
+    service (best-effort, 3s timeout, non-blocking).
+  - Wired emitAlert into: lockdown engage (critical) + lockdown clear (info)
+    + kiosk verify-face (spoof→critical, denied/challenge_failed→warning).
+  - src/hooks/use-alerts-socket.ts — React hook: socket.io-client connects via
+    gateway `/?XTransformPort=3003` path `/sk-alerts/`, backfills recent on
+    connect, listens for live `alert` events, REST-polling fallback every 15s.
+  - src/components/admin/live-alert-bell.tsx — header bell with unread badge
+    (pulsing red dot), connection status indicator (green dot when socket
+    connected), popover with animated alert rows (severity-colored left border,
+    icon, title, message, kiosk id, employee code, relative time), "All clear"
+    empty state, Clear button.
+  - Gateway path discovery: socket.io needs path "/sk-alerts/" (trailing
+    slash) for engine.io handshake. Direct localhost:3000 access doesn't
+    forward XTransformPort (only Caddy does), so WebSocket works via the
+    preview/Caddy (port 81). REST fallback covers direct-3000 access.
+  - Verified end-to-end: engaged lockdown → "System lockdown engaged"
+    appeared in bell (badge=1) in real time; cleared lockdown → "Lockdown
+    cleared" appeared (badge=2). alerts-service /health showed
+    connectedClients=1.
+- NEW FEATURE: Per-kiosk detail sheet
+  - Backend: GET /api/v1/kiosks/[id]/stats — 30-day daily scan buckets,
+    decision breakdown, match-score distribution (bins 0.5-1.0), avg + P95
+    latency, offline count, top-8 employees by scan count, recent 8 scans.
+  - Frontend: src/components/admin/views/kiosk-detail-sheet.tsx — wide Sheet
+    with kiosk header (icon, name, kioskId, location, status badge), 4 KPI
+    cards (total scans, grant rate, P95 latency, offline), sync info (last
+    sync, CRL version), daily scan-activity area chart, match-score
+    distribution bar chart, top-employees list (avatar+code+count), threshold
+    config editor (grant slider + challenge mode select + save/reset), recent
+    scans list. Wired into kiosks-view "Details" button on each KioskCard.
+  - Refactored threshold state to local-override pattern (avoids
+    setState-in-effect lint error): grantOverride/modeOverride fall back to
+    stats values; Save disabled until dirty; Reset restores.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Live alert bell: connected via WS, shows real-time alerts on lockdown.
+  2. Kiosk detail sheet: 4 charts render, KPIs, top employees, threshold
+     editor with save.
+  3. All previous features still work (employees, CSV import, employee
+     detail, calibration, webhooks, mobile, kiosk flow).
+
+Stage Summary:
+- 2 major features: real-time WebSocket alerts (mini-service + live bell +
+  auto-dispatch from lockdown/verify-face) + per-kiosk detail sheet (charts +
+  top employees + threshold editor).
+- Alerts service running on port 3003 (must be started: `cd mini-services/
+  alerts-service && bun run dev`).
+- App now has real-time push (WebSocket) + 5 admin sections + 4 user surfaces.
+
+Unresolved / Notes:
+- Alerts service is a separate bun process — must be running for live alerts.
+  It's currently background-started; on a fresh sandbox it needs
+  `cd mini-services/alerts-service && bun run dev &`.
+- WebSocket works through Caddy (preview, port 81) but not direct localhost:
+  3000 (Next.js doesn't forward XTransformPort). REST fallback covers the
+  direct case with 15s polling.
+- Next-phase candidates: PWA service worker + web push (VAPID) for real
+  mobile push, enrollment wizard live camera capture polish, threshold
+  calibration history persistence, role-based dashboard variants, kiosk
+  heartbeat simulation (auto status changes), audit-trail real-time
+  streaming via the alerts socket.

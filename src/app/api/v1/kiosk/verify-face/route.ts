@@ -7,6 +7,7 @@ import {
   deletePendingScan,
 } from "@/lib/kiosk-session";
 import { dispatchAlert } from "@/lib/webhook-store";
+import { emitAlert } from "@/lib/emit-alert";
 import type {
   VerifyFaceRequest,
   VerifyFaceResponse,
@@ -143,6 +144,15 @@ export async function POST(req: NextRequest) {
         employeeCode: emp.employeeCode,
         timestamp: new Date().toISOString(),
       }).catch(() => {});
+      emitAlert({
+        type: "spoof",
+        severity: "critical",
+        title: "Spoof attempt detected",
+        message: `Paper/photo spoof at ${pending.kioskId} for ${emp.fullName} (${emp.employeeCode}).`,
+        kioskId: pending.kioskId,
+        employeeCode: emp.employeeCode,
+        timestamp: new Date().toISOString(),
+      });
     } else if (decision === "denied" || decision === "challenge_failed") {
       dispatchAlert({
         type: "denied",
@@ -153,6 +163,15 @@ export async function POST(req: NextRequest) {
         employeeCode: emp.employeeCode,
         timestamp: new Date().toISOString(),
       }).catch(() => {});
+      emitAlert({
+        type: "denied",
+        severity: "warning",
+        title: "Access denied",
+        message: `Face match failed at ${pending.kioskId} for ${emp.fullName} (${emp.employeeCode}). Score ${(matchScore * 100).toFixed(0)}%.`,
+        kioskId: pending.kioskId,
+        employeeCode: emp.employeeCode,
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 
