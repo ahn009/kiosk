@@ -50,5 +50,12 @@ test
 prompt
 
 server.log
+
+# Local agent/build artifacts
+/tool-results/
+/agent-ctx/
+/.zscripts/*.pid
+/AGENTS.md
+
 # Skills directory
 /skills/

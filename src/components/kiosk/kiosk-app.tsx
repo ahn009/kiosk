@@ -258,6 +258,8 @@ export function KioskApp() {
   useEffect(() => {
     if (state.kind !== "FACE_VERIFY") return;
     let cancelled = false;
+    // Entering this state starts a fresh verification pipeline.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFacePhase("detecting");
     setLivenessScore(0);
     setMatchScore(0);
@@ -374,6 +376,8 @@ export function KioskApp() {
   // ---- LIVENESS_CHALLENGE: 5s countdown ----
   useEffect(() => {
     if (state.kind !== "LIVENESS_CHALLENGE") return;
+    // Entering the challenge state resets its countdown.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChallengeCountdown(5);
     let cancelled = false;
     const id = window.setInterval(() => {

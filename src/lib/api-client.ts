@@ -379,7 +379,15 @@ export const apiClient = {
       title?: string;
       message?: string;
       severity?: string;
-    }) => api("/webhooks/test", { method: "POST", body: body ?? {} }),
+    }) =>
+      api<{
+        results: {
+          ok: boolean;
+          name: string;
+          status?: number;
+          error?: string;
+        }[];
+      }>("/webhooks/test", { method: "POST", body: body ?? {} }),
     exportAlerts: (params: {
       from?: string;
       to?: string;

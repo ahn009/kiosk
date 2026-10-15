@@ -178,6 +178,8 @@ export function AuditView() {
 
   // Reset selected index when filters change
   useEffect(() => {
+    // The selection mirrors the active filter result set.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIdx(0);
   }, [kioskFilter, decisionFilter, employeeSearch, dateFrom, dateTo]);
 

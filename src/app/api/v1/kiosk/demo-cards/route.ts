@@ -22,7 +22,13 @@ export async function GET(_req: NextRequest) {
   });
 
   const expEpoch = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365 * 2;
-  const cards = [];
+  const cards: {
+    employeeId: string;
+    code: string;
+    name: string;
+    designation: string | null;
+    token: string;
+  }[] = [];
   for (const e of employees) {
     const { token } = buildToken({ orgCode, expEpoch });
     const tokenHash = sha256(token);

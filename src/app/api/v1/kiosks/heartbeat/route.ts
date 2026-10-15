@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-runtime";
+import { requireRole } from "@/lib/auth-runtime";
 import { emitAlert } from "@/lib/emit-alert";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 //
 // Also bumps configVersion occasionally to simulate CRL sync pushes.
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req, ["security_officer", "superadmin", "viewer"]);
+  const auth = await requireRole(req, ["security_officer", "superadmin", "viewer"]);
   if (auth.response) return auth.response;
 
   const now = new Date();
