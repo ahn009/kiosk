@@ -1523,3 +1523,50 @@ Unresolved / Notes:
   persistence, mobile companion push notification wiring, command palette
   action for "simulate scan" / "trigger lockdown drill", dashboard live
   grant-rate counter, export-filtered-CSV from command palette.
+
+---
+Task ID: 16
+Agent: orchestrator (main) — webDevReview round 10
+Task: QA, command palette simulate actions (scan + lockdown drill), dashboard live grant-rate
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+- NEW FEATURE: Command palette simulate actions
+  - Backend: POST /api/v1/kiosk/simulate-scan — picks a random enrolled
+    employee, runs a simulated face match (simulatedProbe for granted /
+    generateEmbedding for denied impostor), computes cosine similarity
+    against the stored embedding, decides granted/denied based on kiosk
+    thresholds, writes an immutable ScanEvent to the audit trail, emits a
+    real-time "scan" alert (+ spoof alert 30% of denied cases). Supports
+    ?kioskId= and ?decision=granted|denied query params to force outcomes.
+  - api-client.kiosks.simulateScan(kioskId?, decision?) helper.
+  - Added a "Simulate" group to the command palette with 4 actions:
+    Simulate scan (random), Simulate granted scan, Simulate denied scan,
+    Trigger lockdown drill (confirm dialog → admin.lockdown). Each
+    invalidates dashboard/audit/kiosk queries on success + shows a toast.
+  - Verified: opened Cmd+K → typed "simulate scan" → Enter → toast "Scan
+    simulated: granted" → dashboard KPI incremented (+6 live, 14 granted).
+    Console clean.
+- (Skipped dashboard live grant-rate counter — the LiveKpiRow already
+  shows granted/denied counts in real-time from the alerts socket; adding
+  a separate grant-rate gauge would be redundant. Focused on the higher-
+  value simulate-scan pipeline instead.)
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Command palette simulate: scan → audit trail + live KPI + ticker.
+  2. All previous features still work.
+
+Stage Summary:
+- 1 major feature: command palette simulate actions (full scan pipeline
+  with audit-trail write + real-time alert + live KPI increment) +
+  lockdown drill trigger.
+- App stable; dev server stayed up.
+
+Unresolved / Notes:
+- Dev server (port 3000) could stop abruptly (round 4). If preview blank:
+  `ss -tlnp | grep 3000` then `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, mobile companion push notification wiring, command palette
+  "clear lockdown" action, simulate-scan bulk (10 at once), audit-trail
+  real-time auto-refresh when new scan events arrive.

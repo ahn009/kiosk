@@ -221,6 +221,24 @@ export const apiClient = {
         message: string;
         severity: string;
       }>("/kiosks/simulate", { method: "POST" }),
+    simulateScan: (kioskId?: string, decision?: string) =>
+      api<{
+        ok: boolean;
+        scanId: number;
+        kioskId: string;
+        employee: { code: string; name: string };
+        decision: string;
+        faceMatchStatus: string;
+        matchScore: number;
+        latencyMs: number;
+        snapshotPath: string;
+      }>(
+        `/kiosk/simulate-scan?${new URLSearchParams({
+          ...(kioskId ? { kioskId } : {}),
+          ...(decision ? { decision } : {}),
+        }).toString()}`,
+        { method: "POST" }
+      ),
     stats: (id: string) =>
       api<{
         kioskId: string;

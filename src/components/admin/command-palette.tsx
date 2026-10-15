@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Command,
   CommandDialog,
@@ -12,6 +13,8 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useAppStore } from "@/lib/store";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
 import {
   LayoutDashboard,
   Users,
@@ -29,6 +32,8 @@ import {
   Zap,
   Activity,
   Bell,
+  PlayCircle,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -49,6 +54,36 @@ export function CommandPalette() {
   const setMode = useAppStore((s) => s.setMode);
   const logout = useAppStore((s) => s.logout);
   const { theme, setTheme } = useTheme();
+  const qc = useQueryClient();
+
+  // Simulate scan mutation
+  const simulateScan = useMutation({
+    mutationFn: (decision?: string) => apiClient.kiosks.simulateScan(undefined, decision),
+    onSuccess: (data) => {
+      toast[data.decision === "granted" ? "success" : "warning"](
+        `Scan simulated: ${data.decision}`,
+        {
+          description: `${data.employee.name} (${data.employee.code}) · ${data.kioskId} · score ${(data.matchScore * 100).toFixed(0)}%`,
+        }
+      );
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      qc.invalidateQueries({ queryKey: ["audit-scans"] });
+      qc.invalidateQueries({ queryKey: ["employee-stats"] });
+    },
+    onError: (e: { error?: string }) => toast.error(e?.error ?? "Simulation failed"),
+  });
+
+  // Lockdown drill mutation
+  const lockdownDrill = useMutation({
+    mutationFn: () => apiClient.admin.lockdown("Lockdown drill triggered via command palette"),
+    onSuccess: () => {
+      toast.error("Lockdown drill engaged — all kiosks set to lockdown");
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      qc.invalidateQueries({ queryKey: ["kiosks"] });
+      qc.invalidateQueries({ queryKey: ["public-status"] });
+    },
+    onError: (e: { error?: string }) => toast.error(e?.error ?? "Drill failed"),
+  });
 
   // Global Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -156,7 +191,46 @@ export function CommandPalette() {
     },
   ];
 
-  const allActions = [...navActions, ...quickActions];
+  const simulateActions: CommandAction[] = [
+    {
+      id: "sim-scan",
+      label: "Simulate scan (random employee)",
+      group: "Simulate",
+      icon: PlayCircle,
+      keywords: ["scan", "test", "demo", "fake", "simulate", "random"],
+      run: () => simulateScan.mutate(),
+    },
+    {
+      id: "sim-scan-granted",
+      label: "Simulate granted scan",
+      group: "Simulate",
+      icon: PlayCircle,
+      keywords: ["scan", "granted", "success", "allow", "test"],
+      run: () => simulateScan.mutate("granted"),
+    },
+    {
+      id: "sim-scan-denied",
+      label: "Simulate denied scan",
+      group: "Simulate",
+      icon: PlayCircle,
+      keywords: ["scan", "denied", "fail", "reject", "test", "spoof"],
+      run: () => simulateScan.mutate("denied"),
+    },
+    {
+      id: "sim-lockdown",
+      label: "Trigger lockdown drill",
+      group: "Simulate",
+      icon: AlertTriangle,
+      keywords: ["lockdown", "drill", "emergency", "test", "trigger"],
+      run: () => {
+        if (confirm("Trigger a lockdown drill? All kiosks will be set to lockdown mode. You can clear it from the Security Center.")) {
+          lockdownDrill.mutate();
+        }
+      },
+    },
+  ];
+
+  const allActions = [...navActions, ...quickActions, ...simulateActions];
 
   function runAction(action: CommandAction) {
     action.run();
@@ -189,6 +263,20 @@ export function CommandPalette() {
         <CommandSeparator />
         <CommandGroup heading="Quick Actions">
           {quickActions.map((a) => (
+            <CommandItem
+              key={a.id}
+              value={`${a.label} ${a.keywords.join(" ")}`}
+              onSelect={() => runAction(a)}
+              className="gap-2"
+            >
+              <a.icon className="size-4 text-muted-foreground" />
+              <span>{a.label}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+        <CommandSeparator />
+        <CommandGroup heading="Simulate">
+          {simulateActions.map((a) => (
             <CommandItem
               key={a.id}
               value={`${a.label} ${a.keywords.join(" ")}`}
