@@ -1,0 +1,629 @@
+# KIOSK Access Control System — Worklog
+
+## Project Overview
+Production-grade multi-kiosk employee ID verification & access control system.
+Built as a comprehensive Next.js 16 web app demonstrating: token-based QR ID
+verification, face recognition (simulated embeddings + cosine match), liveness
+checks, immutable audit trail, admin dashboard, kiosk UI state machine,
+lockdown, offline sync, RBAC.
+
+## Project Status: Foundation Complete
+
+### Tech Stack (adapted for sandbox)
+- Next.js 16 + App Router + TypeScript + Tailwind CSS 4 + shadcn/ui
+- Prisma ORM + SQLite (instead of PostgreSQL+pgvector; embeddings stored as JSON)
+- Zustand for client state, TanStack Query for server state
+- HMAC-SHA256 token signing (instead of Ed25519; built-in Node crypto)
+- Simulated face embeddings (deterministic 512-d from employee seed) + cosine similarity
+
+### Completed
+- Prisma schema: Department, Employee, ScanEvent (immutable audit), Revocation,
+  AdminUser, Enrollment, Kiosk, AdminAction, SystemState (lockdown singleton)
+- Database seeded: 6 departments, 12 employees (10 face-enrolled), 4 kiosks,
+  4 admin users, ~7 days of scan history, 1 revoked card
+- Theme: emerald/teal primary (no indigo/blue), dark industrial kiosk + clean admin
+- Crypto lib: token build/verify (v2.<org>.<key>.<nonce>.<exp>.<sig>), sha256,
+  scrypt password hashing, embedding generation + cosine similarity
+- Shared types (src/lib/types.ts)
+- Auth helper (session-based, role gating, admin action logging)
+
+### Admin Credentials (seeded)
+- admin@acme.io / Admin@2024 (superadmin)
+- security@acme.io / Secure@2024 (security_officer)
+- hr@acme.io / Hradmin@2024 (hr_admin)
+- viewer@acme.io / View@2024 (viewer)
+
+### Kiosks (seeded)
+- KSK-001 Main Lobby, KSK-002 Server Room, KSK-003 R&D Lab, KSK-004 Warehouse Gate
+
+---
+Task ID: 1
+Agent: full-stack-developer
+Task: Build backend API routes
+
+Work Log:
+- Reviewed project state: prisma schema, crypto lib, types, auth helper, db
+  client, seed script. Confirmed SQLite + 12 employees (10 enrolled) + 4
+  kiosks + 4 admin users + 7 days of scan history.
+- Created `src/lib/kiosk-session.ts` — transient in-memory store for
+  pending kiosk scans (verify-token → verify-face handoff). Stored on
+  `globalThis` so the Map survives Next.js dev-mode hot reloads (without
+  this, each route handler gets its own module instance of the lib and
+  pending scans would be lost between verify-token and verify-face).
+- Created `src/lib/mappers.ts` — pure DTO mapping helpers
+  (toEmployeeDTO, toEmployeeDetail, toScanEventDTO, toKioskDTO,
+  toAdminUserDTO) shared across routes to keep response shapes consistent
+  and to strip sensitive fields (pinHash, passwordHash, faceEmbedding).
+- Created `src/lib/auth-runtime.ts` — thin wrapper around `@/lib/auth`
+  that exposes the SAME public API but backs the sessions Map with
+  `globalThis`. Reason: Next.js dev mode bundles `@/lib/auth` separately
+  into each route handler, so the in-memory sessions Map is duplicated
+  per route — a session created by `/auth/login` is invisible to
+  `/employees` etc. The wrapper delegates pure helpers (parseBody, ok,
+  fail, extractBearer, logAdminAction) to `@/lib/auth` and re-implements
+  the session functions with a globalThis-backed Map. This is a dev-mode
+  workaround; in production (next build) all routes share one Node process
+  and one auth.ts module instance, so the original auth.ts would work
+  unchanged.
+- Updated all 23 API route files to import auth helpers from
+  `@/lib/auth-runtime` instead of `@/lib/auth`.
+- Auth routes (3):
+  * POST /api/v1/auth/login — verify password (scrypt via verifySecret),
+    createSession, return {token, admin: AdminUserDTO}. 401 on fail.
+  * POST /api/v1/auth/refresh — requireAuth, re-fetch admin from DB,
+    re-issue a fresh session token (revokes the old one, single-active).
+  * POST /api/v1/auth/logout — destroySession, return {ok:true}.
+- Employee routes (5):
+  * GET /api/v1/employees — paginated (page=1, page_size=20), filters
+    q, department_id, status. Joins Department for name. Returns EmployeeDTO
+    list. requireAuth.
+  * POST /api/v1/employees — role-gated hr_admin/security_officer/superadmin.
+    Validates employeeCode uniqueness, generates 2-year QR card token via
+    buildToken (org code from SystemState), stores sha256(token) as
+    cardTokenHash. Returns EmployeeDetail + raw cardToken string for
+    admin to print/QR.
+  * GET /api/v1/employees/[id] — full EmployeeDetail (scanCount,
+    lastScanAt) WITHOUT exposing faceEmbedding or pinHash.
+  * PATCH /api/v1/employees/[id] — role-gated hr_admin/superadmin.
+    Updates fullName, designation, accessLevel, departmentId, cardStatus.
+    Logs admin action.
+  * DELETE /api/v1/employees/[id] — role-gated superadmin/hr_admin.
+    Soft-delete: anonymize name → "Deleted User", clear faceEmbedding +
+    cardTokenHash, set cardStatus revoked, add old tokenHash to Revocation.
+- Employee sub-routes (3):
+  * POST /api/v1/employees/[id]/reissue-card — role-gated
+    hr_admin/superadmin. Rotates card token: revokes old token via
+    Revocation table, mints new token, updates cardTokenHash, bumps CRL
+    version. Returns new cardToken.
+  * POST /api/v1/employees/[id]/revoke — role-gated
+    security_officer/superadmin. Body {reason?, suspendFace?}. Adds
+    cardTokenHash to Revocation, sets cardStatus=revoked, optionally
+    nulls faceEmbedding. Bumps CRL.
+  * GET /api/v1/employees/[id]/scan-history — paginated ScanEventDTO
+    (page_size=20) newest-first.
+- Enrollment routes (2):
+  * POST /api/v1/enrollment/[employeeId]/capture — role-gated
+    hr_admin/superadmin. Body {images: string[3..5], consentAcknowledged
+    (must be true)}. Generates deterministic 512-d embedding via
+    generateEmbedding(employeeCode), stores as JSON string, sets
+    faceEnrolledAt + faceConsentAt, creates Enrollment record with
+    imageQualityScore (0.8-0.97 random).
+  * GET /api/v1/enrollment/[employeeId]/status — returns
+    {status: "enrolled"|"pending"|"failed", qualityScore?,
+    consentAcknowledged, enrolledAt?}.
+- Kiosk routes (4, no bearer auth — device-cert simulated):
+  * POST /api/v1/kiosk/verify-token — Body {token, kioskId, ts, nonce}.
+    Pipeline: lockdown check → verifyToken (signature+expiry) →
+    Revocation check → employee lookup by cardTokenHash → cardStatus
+    check → faceEnrolled check. On success: generates scanId (uuid),
+    picks random challengeSeed (blink/turn_left/turn_right), creates a
+    PendingScan via kiosk-session, returns {status:"await_face", scanId,
+    employeeRef, challengeSeed}. On any failure: {status:"denied",
+    reason}.
+  * POST /api/v1/kiosk/verify-face — Body VerifyFaceRequest. Looks up
+    pending scan by scanId, fetches employee.faceEmbedding, computes
+    cosineSimilarity(probe, enrolled). Decision matrix:
+      - spoofFlags.paper_detected → challenge_failed (mismatch)
+      - livenessScore < 0.87 → challenge_failed (liveness_fail)
+      - score >= thresholdGranted AND liveness ok → granted (match)
+      - score >= thresholdChallenge → granted (challenge path)
+      - else → denied (mismatch)
+    ALWAYS writes an immutable ScanEvent (kioskId, employeeId (or null),
+    tokenHash, faceMatchScore, faceMatchStatus, spoofFlags (JSON),
+    decision, latencyMs (from scan startedAt), offline:false,
+    snapshotPath=`kiosk:<kioskId>/<scanId>`). For granted, returns
+    employeeDisplay {code, name, department, designation, accessLevel,
+    photoUrl, lastEntry} where lastEntry = most recent prior granted
+    scan for this employee.
+  * POST /api/v1/kiosk/sync — Body {kioskId, events[], crlVersion}.
+    Idempotent insert of offline ScanEvents (skip if tokenHash+createdAt
+    already exists). Updates kiosk.lastSyncAt. Returns delta of
+    Revocations newer than client crlVersion.
+  * GET /api/v1/kiosk/config/[kioskId] — returns kiosk thresholds,
+    challengeMode, crlVersion (from SystemState), configVersion,
+    lockdown state. No auth (kiosk endpoint).
+- Admin / Dashboard / Audit routes (8):
+  * GET /api/v1/dashboard/stats — requireAuth. Computes scansToday,
+    grantedToday, deniedToday, grantRate, activeKiosks, totalKiosks,
+    totalEmployees, enrolledEmployees, lockdownActive,
+    spoofAttemptsToday, scansByHour (24 buckets), scansByKiosk (group
+    by kiosk), recentDenials (last 5 denied today), frr (denied/total
+    among known-employee scans today), far (0.0 placeholder).
+  * GET /api/v1/audit/scans — requireAuth. Filters: kiosk_id,
+    employee_id, decision, from, to, page. Paginated ScanEventDTO
+    (page_size=25) joined with employee for name/code.
+  * POST /api/v1/admin/lockdown — role-gated
+    security_officer/superadmin. Body {reason}. Sets SystemState
+    lockdownActive=true, lockdownReason, lockdownStartedAt, bumps
+    crlVersion, marks all kiosks status=lockdown. Logs admin action.
+  * DELETE /api/v1/admin/lockdown — clears lockdown, restores kiosks
+    to online, bumps crlVersion.
+  * GET /api/v1/admin/users — role-gated superadmin. Returns
+    AdminUserDTO list (no passwordHash).
+  * GET /api/v1/departments — requireAuth. Returns {id, name, code}.
+  * GET /api/v1/kiosks — requireAuth. Returns KioskDTO list.
+  * PATCH /api/v1/kiosks/[id] — role-gated
+    security_officer/superadmin. Updates thresholdGranted,
+    thresholdChallenge, challengeMode, status, name, location.
+    Increments configVersion. Logs admin action.
+  * GET /api/v1/revocations — role-gated
+    security_officer/superadmin. Lists revocations joined to employee
+    (by tokenHash) for display.
+  * GET /api/v1/admin-actions — role-gated
+    security_officer/superadmin. Paginated admin action audit log,
+    joined to actor admin. Filters: action, actor_id.
+- All 23 route files use `export const dynamic = "force-dynamic"` to
+  bypass caching. All `params` are awaited (Next.js 16 Promise pattern).
+- Ran `bun run lint` — clean (no errors). Ran `bunx tsc --noEmit` —
+  no errors in src/ or prisma/ (only unrelated errors in examples/
+  and skills/ which are out of scope).
+- End-to-end smoke tests via curl + Python:
+  * Full verify-token → verify-face flow: created employee → enrolled
+    face → verify-token returns await_face + scanId → verify-face with
+    correct embedding returns granted (matchScore=1.0) + employeeDisplay
+    with lastEntry from prior granted scan.
+  * Spoof rejection: paper_detected=true → challenge_failed.
+  * Liveness rejection: livenessScore=0.5 → challenge_failed.
+  * Lockdown: enable → verify-token returns "denied: lockdown" →
+    disable → verify-token returns await_face again.
+  * Revoke: superadmin revokes → verify-token returns "denied: revoked".
+  * Reissue: rotates cardToken, revokes old, bumps CRL.
+  * Sync: idempotent (duplicate tokenHash+createdAt → 0 new inserts).
+  * Logout: subsequent requests return 401.
+
+Stage Summary:
+- All 23 API route files created under src/app/api/v1/ per the contract.
+- 2 supporting lib files created:
+  * src/lib/kiosk-session.ts (pending scan store, globalThis-backed)
+  * src/lib/auth-runtime.ts (auth wrapper, globalThis-backed sessions)
+  * src/lib/mappers.ts (DTO mapping helpers)
+- Full API surface matches the contract:
+  - Auth: login/refresh/logout
+  - Employees: list/create, detail/update/delete, reissue-card, revoke,
+    scan-history
+  - Enrollment: capture, status
+  - Kiosk: verify-token, verify-face, sync, config
+  - Admin/Audit: dashboard/stats, audit/scans, admin/lockdown (POST+DELETE),
+    admin/users, departments, kiosks (list + PATCH), revocations,
+    admin-actions
+- All routes correctly gate roles per spec (superadmin, security_officer,
+  hr_admin, viewer) where required.
+- All routes map DB rows to DTOs (no leaking of faceEmbedding, pinHash,
+  passwordHash, or cardTokenHash to unauthenticated callers).
+- Scan events are append-only (immutable audit trail) — verify-face
+  ALWAYS writes a ScanEvent regardless of decision.
+- Lockdown bumps CRL version so kiosks sync the revocation delta.
+- Lint clean, TypeScript clean (in src/ + prisma/).
+- API fully functional end-to-end against seeded SQLite database.
+- NOTE for downstream agents: authenticate via `POST /api/v1/auth/login`
+  with `admin@acme.io` / `Admin@2024` (superadmin). All protected routes
+  expect `Authorization: Bearer <token>` header. Token TTL = 30 min.
+  Use `/api/v1/auth/refresh` to rotate. The auth-runtime wrapper means
+  sessions persist across dev hot reloads (a workaround for Next.js dev
+  module duplication).
+
+---
+Task ID: 3
+Agent: full-stack-developer
+Task: Build the kiosk fullscreen frontend under `src/components/kiosk/`.
+
+Work Log:
+- Read the project context from worklog.md (Task 1 backend complete),
+  the seeded schema, crypto.ts, types.ts, api-client.ts, store.ts,
+  demo-cards route, verify-token + verify-face routes, layout.tsx,
+  globals.css, and the launcher. Confirmed the available infrastructure
+  (Zustand store with `mode`/`setMode`/`kioskId`, `apiClient.kiosks.*`
+  helpers, demo-cards endpoint mints fresh QR tokens per call).
+- Created `src/lib/face-client.ts` — browser-side replica of the
+  server's `generateEmbedding(seed)` using the Web Crypto API
+  (`crypto.subtle.digest("SHA-256", TextEncoder.encode(seed+":"+counter))`).
+  Same algorithm: while `vec.length < 512`, hash `${seed}:${counter}`,
+  take bytes, map each byte `(b/127.5)-1`, collect 512 values,
+  L2-normalize. This produces the IDENTICAL 512-d vector as the
+  server's `generateEmbedding(employeeCode)` — so the kiosk's probe
+  matches the enrolled embedding byte-for-byte (modulo tiny ±2.5%
+  noise added for visual realism, dropping cosine to ~0.95 — still
+  well above the 0.85 granted threshold).
+- Created the kiosk state machine in `src/components/kiosk/state.ts`:
+  discriminated union `KioskState` (IDLE | SCANNING | TOKEN_OK |
+  FACE_VERIFY | LIVENESS_CHALLENGE | SUCCESS | DENIED | TIMEOUT |
+  LOCKDOWN) + `KioskAction` union + `kioskReducer` (pure). LOCKDOWN
+  is sticky — only `LOCKDOWN_OFF` exits it. Includes
+  `CHALLENGE_LABEL`, `DENIED_REASON_TEXT`, `lastEntryLabel` helpers.
+- Created `src/components/kiosk/use-camera.ts` — `useCamera(enabled)`
+  hook. Requests `getUserMedia({video:{facingMode:"user",
+  width:1280, height:720}})`, attaches the stream to a `<video>` ref
+  via `srcObject`, cleans up tracks on disable/unmount. Derives the
+  public status as `enabled ? rawState : idle` so no setState happens
+  synchronously in effect body (avoids cascading-render lint rule).
+  Falls back to "denied"/"unsupported" gracefully — never throws.
+- Created `src/components/kiosk/use-clock.ts` — `useClock()` returns a
+  live-updating `Date` (1s tick). Exports `formatClock` (HH:MM:SS mono)
+  and `formatDate`.
+- Created `src/components/kiosk/demo-scan-picker.tsx` — Dialog with a
+  searchable list of demo employees fetched via `api("/kiosk/demo-cards")`.
+  Each card shows name/designation/code; clicking one calls
+  `startScan(token)` to begin the real pipeline. Includes a "Raw token"
+  mode for pasting a `v2.org.key.nonce.exp.sig` string.
+- Created `src/components/kiosk/supervisor-override.tsx` — Dialog with
+  a 6-digit PIN pad (InputOTP + on-screen numeric keypad). Accepts
+  `123456` for demo; wrong PIN triggers a shake animation. On confirm →
+  dispatches `SUPERVISOR_OVERRIDE_SUCCESS` → SUCCESS state with
+  `supervisorOverride:true`.
+- Created `src/components/kiosk/hold-to-exit.tsx` — discreet "Hold to
+  exit" button. Press & hold for 1.8s (fills a horizontal progress bar
+  via requestAnimationFrame) → calls `setMode("launcher")`. Tap fallback
+  opens a confirm popover.
+- Created the 7 state screens under `src/components/kiosk/screens/`:
+  * `idle-screen.tsx` — Big SentinelKiosk wordmark + emerald gradient
+    logo, animated scanning icon (scanline + pulse ring), large
+    "Scan your ID card" prompt, top-left kiosk ID + status badge,
+    top-right live mono clock, bottom-right camera preview (privacy
+    masked with blurred overlay + scanlines), bottom footer with
+    consent + kiosk location.
+  * `scanning-screen.tsx` — Card-with-scanline animation, progress
+    bar, "Verifying ID card…" heading, latency counter. Plus
+    `TokenOkScreen` — green spring-animated shield with "ID Verified"
+    shown for 600ms between SCANNING and FACE_VERIFY.
+  * `face-verify-screen.tsx` — Camera frame (420×300) with live
+    `<video>` (mirrored via `scale-x-[-1]`), animated face bounding
+    box with corner indicators, scanline, pulse ring outside frame,
+    LIVE/SIM status chip, "Look at the camera" prompt, right panel
+    with live Liveness + Face Match meters (animated), pipeline phase
+    indicator (detecting/liveness/embedding/verifying/ready). Falls
+    back to animated SVG face silhouette with scanline when camera is
+    denied/unsupported. 30s session timeout. Also exports
+    `LivenessChallengeScreen` — amber countdown ring (5s), animated
+    instruction icon (Blink/TurnLeft/TurnRight), "I've done it" button.
+  * `success-screen.tsx` — Emerald gradient bg, big spring animated
+    check, "Access Granted" headline, "Gate triggered" badge with
+    kiosk name, employee card panel sliding up with photo (avatar
+    fallback), name, code, designation, department, access level,
+    last-entry relative timestamp, match score. Auto-resets after 5s.
+  * `denied-screen.tsx` — Red gradient bg, animated X-circle, "Access
+    Denied" headline, "Security has been notified" subtitle,
+    supervisor-readable reason code, snapshot captured badge, retry +
+    supervisor override buttons (when available). Auto-resets after 4s.
+    Also exports `TimeoutScreen` — amber with rotating icon, tap to
+    retry.
+  * `lockdown-screen.tsx` — Full-screen red with diagonal stripes
+    pattern, slow panning red light, "SYSTEM LOCKDOWN" big headline,
+    "All access has been denied", "Scanner disabled" badge, "Polling
+    system state every 5 seconds" indicator.
+- Created `src/components/kiosk/kiosk-app.tsx` — main entrypoint
+  (exported as `KioskApp`). Wraps everything in `fixed inset-0 dark
+  bg-background` div. Uses `useReducer(kioskReducer, initialState)`.
+  Forces dark theme on mount via `useTheme().setTheme("dark")`,
+  restores previous theme on unmount. Polls `/kiosk/config/{kioskId}`
+  every 10s (5s in LOCKDOWN) for lockdown detection + thresholds.
+  Uses the raw `api()` helper (not `apiClient.kiosks.config`) because
+  the apiClient type claims `lockdown: boolean` but the actual route
+  returns `lockdown: {active, reason, startedAt}` and nests
+  `thresholds: {granted, challenge}`. Orchestrates the FACE_VERIFY
+  pipeline: detecting (1s) → liveness (1.5s animated) → embedding →
+  verifyFace (server call) → SUCCESS or DENIED. Auto-resets from
+  terminal states. AnimatePresence for state transitions.
+- Fixed ESLint `react-hooks/set-state-in-effect` rule violations in
+  `use-camera.ts` (restructured to use derived state instead of
+  synchronous setStatus in effect body) and `supervisor-override.tsx`
+  (moved pin-reset logic into the onOpenChange handler).
+- Fixed TypeScript error: `state.livenessPassed` was referenced in
+  the FACE_VERIFY effect's dep array but `livenessPassed` only exists
+  on the FACE_VERIFY state variant. Switched to conditional ternary
+  with narrowing: `state.kind === "FACE_VERIFY" ? state.livenessPassed
+  : null`.
+- Verified end-to-end with curl + a Node.js test script:
+  * `GET /api/v1/kiosk/demo-cards` returns 10 active employees with
+    freshly-minted QR tokens.
+  * `POST /api/v1/kiosk/verify-token {token, kioskId, ts, nonce}`
+    returns `{status:"await_face", scanId, employeeRef:{code:"EMP-1001",
+    name:"James Carter", accessLevel:3, photoUrl:...}, challengeSeed:
+    "turn_right"}`.
+  * Computing the enrolled embedding client-side (Node crypto replica
+    of the Web Crypto algorithm I implemented in face-client.ts) and
+    sending it as the probe to `POST /api/v1/kiosk/verify-face`
+    returns `{decision:"granted", matchScore:1,
+    faceMatchStatus:"match", employeeDisplay:{code:"EMP-1001",
+    name:"James Carter", department:"Engineering", designation:"Senior
+    Engineer", accessLevel:3, photoUrl:..., lastEntry:"2026-10-14..."}}`.
+    This confirms the Web Crypto replica produces the IDENTICAL bytes
+    to the server's Node crypto implementation, so the kiosk's probe
+    matches the enrolled embedding → cosine ≈ 1.0 → backend GRANTED.
+- The dev server is compiling cleanly (`GET / 200`,
+  `GET /api/v1/kiosk/config/KSK-001 200` from my polling, all kiosk
+  routes returning 200). The earlier "Module not found: Can't resolve
+  '@/components/kiosk/kiosk-app'" error is resolved.
+
+Stage Summary:
+- 11 files created (1 lib + 10 kiosk components incl. 7 state screens).
+- Full kiosk state machine with explicit `useReducer` — no ad-hoc
+  booleans. All states covered: IDLE → SCANNING → TOKEN_OK →
+  FACE_VERIFY → (LIVENESS_CHALLENGE) → SUCCESS | DENIED | TIMEOUT →
+  IDLE. LOCKDOWN overrides any state.
+- Real backend integration: the kiosk calls verify-token and
+  verify-face against the actual API, gets real decisions, and the
+  immutable ScanEvent audit row is written by the backend for every
+  face verification (granted or denied).
+- The face match works end-to-end because the kiosk replicates the
+  server's `generateEmbedding` algorithm using the Web Crypto API,
+  using the employee code (returned by verify-token) as the seed — so
+  the probe vector is byte-identical to the enrolled embedding.
+- Camera is gracefully degraded: live video if `getUserMedia`
+  succeeds, animated SVG face silhouette + scanline if denied or
+  unsupported. Cleaned up properly on unmount.
+- Dark theme is forced via `next-themes` `setTheme("dark")` on mount,
+  restored on unmount — so the kiosk always renders dark regardless
+  of the global setting.
+- Lockdown polling: every 10s while in IDLE, every 5s while in
+  LOCKDOWN. `LOCKDOWN_ON` action overrides any state; `LOCKDOWN_OFF`
+  returns to IDLE.
+- Supervisor override: shown after 2+ face failures. PIN pad accepts
+  `123456`. Dispatches `SUPERVISOR_OVERRIDE_SUCCESS` → SUCCESS state
+  with `supervisorOverride:true` flag → "Supervisor override applied"
+  amber tag.
+- Exit: discreet bottom-left "Hold to exit" button (1.8s hold) →
+  `setMode("launcher")` + clears `kioskId`. Tap fallback opens a
+  confirm popover.
+- Lint clean (0 errors in src/components/kiosk/ + src/lib/face-client.ts).
+- TypeScript clean (no errors in src/components/kiosk/ or
+  src/lib/face-client.ts).
+- Did NOT modify page.tsx, layout.tsx, store.ts, api-client.ts,
+  types.ts, crypto.ts, auth.ts, db.ts, any backend route, or any
+  `src/components/admin/*` file (per scope).
+- The SUCCESS flow is verified working end-to-end: pick a demo card →
+  SCANNING (verify-token) → TOKEN_OK (600ms) → FACE_VERIFY (camera +
+  animated pipeline) → verify-face with Web-Crypto-replicated probe →
+  backend returns granted (matchScore≈1.0) + employeeDisplay →
+  SUCCESS screen with employee card panel + match score + gate
+  triggered badge → auto-reset to IDLE after 5s.
+
+Files created (11 total):
+- src/lib/face-client.ts
+- src/components/kiosk/state.ts
+- src/components/kiosk/use-camera.ts
+- src/components/kiosk/use-clock.ts
+- src/components/kiosk/demo-scan-picker.tsx
+- src/components/kiosk/supervisor-override.tsx
+- src/components/kiosk/hold-to-exit.tsx
+- src/components/kiosk/kiosk-app.tsx
+- src/components/kiosk/screens/idle-screen.tsx
+- src/components/kiosk/screens/scanning-screen.tsx
+- src/components/kiosk/screens/face-verify-screen.tsx
+- src/components/kiosk/screens/success-screen.tsx
+- src/components/kiosk/screens/denied-screen.tsx
+- src/components/kiosk/screens/lockdown-screen.tsx
+
+---
+Task ID: 2
+Agent: full-stack-developer
+Task: Build the entire admin dashboard frontend under src/components/admin/
+
+Work Log:
+- Read worklog.md (Task 1 backend complete: 23 API route files + 3 lib
+  helpers, all 200 OK against seeded SQLite). Reviewed existing
+  infrastructure: store.ts (Zustand), api-client.ts (typed methods),
+  types.ts (DTOs), providers.tsx (TanStack Query + next-themes),
+  launcher.tsx (existing app entry). Confirmed shadcn/ui component set
+  in src/components/ui/.
+- Created folder structure: src/components/admin/{admin-app.tsx,
+  login-view.tsx, admin-shell.tsx, lib/, views/}.
+- Built `lib/admin-utils.ts` — shared color/class maps for decisions,
+  card statuses, kiosk statuses, face match statuses, admin roles,
+  access levels; date/number formatters; CSV download helper;
+  copyToClipboard; `asArray<T>(d)` helper to normalise `{items: T[]}`
+  vs `T[]` response shapes (the api-client typings declare bare arrays
+  but kiosks/departments/admin-users/revocations endpoints actually
+  return `{items: [...]}` at runtime).
+- Built `lib/ui-bits.tsx` — KpiCard, EmptyState, ViewContainer (Framer
+  Motion fade-in wrapper), TableSkeleton, ScoreBar.
+- Built `admin-app.tsx` — entry: if store.admin is null → LoginView,
+  else AdminShell.
+- Built `login-view.tsx` — bg-grid centered card, email/password fields
+  with show/hide toggle, 4 quick-fill buttons (superadmin, security,
+  hr_admin, viewer), back-to-launcher button. On success: login(token,
+  admin) + toast "Welcome back" + navigate to dashboard.
+- Built `admin-shell.tsx` — sticky header (brand, section title,
+  lockdown badge, theme toggle, back-to-launcher, user dropdown with
+  avatar+role+logout), fixed left sidebar (desktop) / Sheet (mobile)
+  with role-gated nav items, main content with AnimatePresence view
+  transitions, sticky footer with system status + version. NavList
+  extracted to module level (per react-hooks/static-components rule).
+- Built `views/dashboard-view.tsx` — 4 KPI cards with trend accent,
+  lockdown red banner, two recharts (Area "Scans by Hour" + Bar
+  "Scans by Kiosk" with granted/denied stacked), FAR/FRR/Spoof
+  stat cards, recent denials table (clickable → audit view).
+- Built `views/employees-view.tsx` — table with avatar+name+code,
+  department, designation, access level badge (color by tier 1-5),
+  card status badge (active/revoked/expired/lost color-coded), face
+  enrolled icon, card expires (relative). Row dropdown: View Details,
+  Edit, Reissue Card, Enroll Face, Revoke, Scan History, Delete.
+  Search + department filter + status filter + pagination. Dialogs:
+  Create/Edit (with access level slider 1-5), Details (full profile +
+  card token hash), QR Token (api.qrserver.com img with fallback,
+  copy + print buttons), Revoke (reason textarea + suspend face
+  switch, destructive), Delete (AlertDialog → soft-delete). Scan
+  History Sheet with paginated event list. Form state managed with
+  `key` props to avoid setState-in-effect rule.
+- Built `views/enrollment-view.tsx` — searchable employee picker if
+  no enrollmentTargetId, else 3-step wizard with Stepper:
+  1. Consent (GDPR notice, checkbox, employee info card with
+     timestamp) — disabled next until checked.
+  2. Capture (camera viewport via getUserMedia with graceful
+     fallback, animated scanline during capture, 5 slots with
+     quality metrics sharpness/brightness/faceSize + ScoreBar +
+     retry per slot, min 3 captures at ≥0.80 quality to proceed).
+  3. Review & Submit (avg quality display, captures grid, decision
+     logic preview, submit calls enrollment.capture → success state
+     with animated check).
+- Built `views/audit-view.tsx` — filters bar (kiosk, decision, date
+  range, employee search), results table with time/kiosk/employee/
+  decision/face match/score+bar/latency/offline+spoof flag icons.
+  Row click → detail Sheet with snapshot placeholder (CONFIDENTIAL
+  watermark overlay), score/latency cards, employee info, token
+  hash, spoof flags JSON pretty-printed. CSV export. Pagination.
+- Built `views/kiosks-view.tsx` — live heartbeat grid (pulsing dots
+  for online kiosks), kiosk cards with status color, last sync,
+  config version, CRL version, thresholds. Click → config editor
+  Dialog with name/location inputs, status select, challenge mode
+  select, threshold sliders (0.5-0.99 grant, 0.4-0.95 challenge)
+  with warning if challenge ≥ grant. Decision logic preview. Save
+  calls kiosks.update.
+- Built `views/security-view.tsx` — lockdown control card (red
+  banner if active, Initiate/Clear with reason dialog/AlertDialog,
+  role-gated security_officer/superadmin). Tabs: Revocation List
+  (table from revocations.list), Admin Users (table from
+  admin.users, superadmin only), Admin Actions log (paginated,
+  collapsible before/after JSON viewer), Webhook Config (Slack/
+  Teams/email/generic, enable switch, event multi-select, min
+  score, test button → toast).
+- Refactored admin-shell.tsx NavList from inline component to
+  module-level (eslint react-hooks/static-components).
+- Fixed security-view.tsx AlertDialogTrigger import.
+- Fixed employees-view.tsx CreateEditDialog form state management —
+  replaced useMemo(setState(...)) with key-based remounting
+  (react-hooks/set-state-in-effect rule).
+- Fixed security-view.tsx AdminActionRow `hasData` typed as boolean
+  instead of `unknown` (TypeScript error).
+- Fixed admin-shell.tsx AdminSection import from @/lib/store
+  (not @/lib/types).
+- Applied `asArray` helper to all 4 affected query calls
+  (kiosks/departments/admin.users/revocations) so views can iterate
+  safely.
+- Ran `bun run lint` — clean (no errors).
+- Ran `bunx tsc --noEmit` — no errors in src/components/admin/
+  (remaining errors are in examples/, skills/, and unrelated
+  kiosk/demo-cards route, all out of scope).
+- Smoke-tested all admin API endpoints via curl with superadmin
+  token — all return 200 OK with expected shapes:
+  - auth/login → {token, admin}
+  - dashboard/stats → 14 scans today, 4 kiosks, 15 employees, 11 enrolled
+  - employees?page=1 → 15 items
+  - audit/scans?page=1 → 112 total, 25 per page
+  - kiosks → 4 items (after unwrap)
+  - revocations → 1 item
+  - admin/users → 4 items
+  - admin-actions?page=1 → 28 total
+  - departments → 6 items
+- Dev log confirms live usage: 200 OK on auth/login, dashboard/stats,
+  employees (list+detail), enrollment/status, scan-history, kiosks,
+  revocations, admin/users, admin-actions, departments, audit/scans.
+
+Stage Summary:
+- 9 files created under src/components/admin/:
+  - admin-app.tsx (entry, exported as AdminApp)
+  - login-view.tsx
+  - admin-shell.tsx (with module-level NavList component)
+  - lib/admin-utils.ts (formatters, color maps, asArray helper,
+    CSV/clipboard helpers)
+  - lib/ui-bits.tsx (KpiCard, EmptyState, ViewContainer,
+    TableSkeleton, ScoreBar)
+  - views/dashboard-view.tsx
+  - views/employees-view.tsx
+  - views/enrollment-view.tsx
+  - views/audit-view.tsx
+  - views/kiosks-view.tsx
+  - views/security-view.tsx
+- All 7 admin sections (Dashboard, Employees, Enrollment, Audit,
+  Kiosks, Security, + Login) are functional and hit the real backend
+  API. TanStack Query for data fetching + mutations with
+  invalidateQueries. Sonner toasts for all mutations. Framer Motion
+  for view/dialog transitions. recharts for dashboard charts. shadcn/ui
+  components throughout (Card, Button, Dialog, Sheet, AlertDialog,
+  DropdownMenu, Select, Tabs, Slider, Badge, Avatar, Skeleton,
+  Table, Switch, Checkbox, etc.). Responsive (mobile sidebar → Sheet,
+  tables scroll horizontally, KPI grid stacks). Light/dark theme via
+  next-themes. Sticky footer with system status. Role gating enforced
+  (superadmin sees Admin Users tab, security_officer+superadmin see
+  Security Center, hr_admin+superadmin can edit employees, etc.).
+- Lint clean. TypeScript clean (in scope). All API calls returning
+  200 OK against seeded SQLite.
+- Workaround noted for downstream agents: `asArray<T>(d)` helper
+  needed because kiosks/departments/admin-users/revocations endpoints
+  return `{items: T[]}` at runtime despite api-client typings declaring
+  bare `T[]`. See src/components/admin/lib/admin-utils.ts.
+- NOTE for downstream kiosk agent: src/components/kiosk/kiosk-app
+  module is still missing — page.tsx throws Module not found for it.
+  Not in this task's scope.
+
+---
+Task ID: 4
+Agent: orchestrator (main)
+Task: Integration, bug fixes, end-to-end verification, cron job setup
+
+Work Log:
+- Fixed API response shape mismatch: 4 list endpoints (kiosks, departments,
+  admin/users, revocations) returned `{items:[...]}` while the api-client + launcher
+  expected bare arrays. Changed backend to return bare arrays (matches types) so
+  the launcher kiosk list renders.
+- Added 2 PUBLIC endpoints (pre-auth) so the launcher works without login:
+  - GET /api/v1/public/kiosks → [{kioskId, name, location, status}]
+  - GET /api/v1/public/status → {lockdownActive, lockdownReason, orgCode, orgName}
+- Updated launcher to use public endpoints (was hitting auth-gated routes → 401
+  → kiosk list never rendered). Lockdown badge now reflects real state.
+- Fixed React Query invalidation bug in security-view.tsx: lockdown mutation
+  invalidated `["dashboard-stats"]` but the security card read from
+  `["dashboard-stats-security"]` (different key) → UI never updated after
+  engage/clear. Added invalidation for the correct key (+public-status +kiosks).
+- Cleaned up 3 test employees (EMP-FLOW, EMP-FINAL, EMP-9999) left by backend
+  smoke tests.
+- Reduced Prisma log verbosity (query→error/warn) to keep dev.log readable.
+- Ran `bun run lint` → clean (0 errors).
+- Verified end-to-end with agent-browser:
+  1. Launcher renders: hero, 2 mode cards, 4 kiosk cards (KSK-001..004),
+     lockdown badge, feature strip, sticky footer.
+  2. Admin login: quick-fill superadmin → JWT session → dashboard.
+  3. Dashboard: real KPIs (6 granted/8 denied), scans-by-hour area chart,
+     scans-by-kiosk bar chart, recent denials table, FAR/FRR/sspoof cards.
+  4. Employees: table with all seeded employees, columns (employee, dept,
+     designation, access level, card status, face enrolled, card expires).
+  5. Audit Trail: shows kiosk scan events incl. the live "granted" scan for
+     James Carter EMP-1001 from the kiosk flow (immutable audit confirmed).
+  6. Security: initiate lockdown (confirm dialog + reason) → UI flips to
+     "LOCKDOWN ACTIVE ENGAGED" + Clear button → clear (confirm) → back to
+     "OPERATIONAL". API confirms state changes.
+  7. Kiosk full flow: IDLE (scan prompt, camera-offline fallback) → demo card
+     picker (all enrolled employees) → SCANNING → FACE_VERIFY → SUCCESS
+     "Access Granted" with employee card (James Carter, Engineering, L3) +
+     "Gate triggered" + match score. verify-token + verify-face POSTs return 200;
+     scan event logged to immutable audit.
+  8. Sticky footer verified: admin shell uses `min-h-screen flex flex-col` +
+     `mt-auto` footer (sticks on short pages, pushed down on long pages).
+
+Stage Summary:
+- Full system functional end-to-end against real backend APIs.
+- All 23 backend routes + 2 public routes returning 200.
+- Core golden path (scan → face match → grant → audit log) verified in browser.
+- Lockdown/security controls verified (engage + clear, reactive UI).
+- Lint clean. Dev server stable on :3000.
+
+Unresolved / Notes:
+- In-memory session store resets on dev-server hot reload (expected in dev;
+  prod would use stateless JWT RS256). Quick re-login restores.
+- Camera is "offline" in headless agent-browser (no webcam) — kiosk gracefully
+  falls back to placeholder. On a real kiosk device getUserMedia works.
+- Face match is simulated via deterministic client-side embedding replica
+  (Web Crypto SHA-256) of the server's enrolled vector → cosine ≈ 1.0. Real
+  deployment swaps in InsightFace ArcFace ONNX on the edge.
+- Next phase candidates (for recurring webDevReview): enrollment wizard live
+  capture test, CSV bulk import, PWA mobile companion, webhook config wiring,
+  threshold calibration UI, per-kiosk config editor stress test.
