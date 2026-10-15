@@ -253,9 +253,9 @@ export function DashboardView() {
               <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 False Accept Rate
               </p>
-              <p className="text-2xl font-bold tabular-nums mt-1">
+              <div className="text-2xl font-bold tabular-nums mt-1">
                 {isLoading ? <Skeleton className="h-8 w-16" /> : formatPct(stats?.far ?? 0)}
-              </p>
+              </div>
             </div>
             <div className="size-9 rounded-lg bg-success/10 text-success flex items-center justify-center">
               <TrendingUp className="size-4" />
@@ -271,9 +271,9 @@ export function DashboardView() {
               <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 False Reject Rate
               </p>
-              <p className="text-2xl font-bold tabular-nums mt-1">
+              <div className="text-2xl font-bold tabular-nums mt-1">
                 {isLoading ? <Skeleton className="h-8 w-16" /> : formatPct(stats?.frr ?? 0)}
-              </p>
+              </div>
             </div>
             <div
               className={`size-9 rounded-lg flex items-center justify-center ${
@@ -295,9 +295,9 @@ export function DashboardView() {
               <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 Spoof Attempts Today
               </p>
-              <p className="text-2xl font-bold tabular-nums mt-1">
+              <div className="text-2xl font-bold tabular-nums mt-1">
                 {isLoading ? <Skeleton className="h-8 w-16" /> : formatNumber(stats?.spoofAttemptsToday ?? 0)}
-              </p>
+              </div>
             </div>
             <div className="size-9 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center">
               <ShieldAlert className="size-4" />

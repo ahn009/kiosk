@@ -21,8 +21,13 @@ export async function GET(req: NextRequest) {
   const [state, totalEmployees, enrolledEmployees, totalKiosks, activeKiosks, scansTodayRows] =
     await Promise.all([
       db.systemState.findUnique({ where: { id: "singleton" } }),
-      db.employee.count(),
-      db.employee.count({ where: { faceEmbedding: { not: null } } }),
+      db.employee.count({ where: { fullName: { not: "Deleted User" } } }),
+      db.employee.count({
+        where: {
+          faceEmbedding: { not: null },
+          fullName: { not: "Deleted User" },
+        },
+      }),
       db.kiosk.count(),
       db.kiosk.count({ where: { status: "online" } }),
       db.scanEvent.findMany({

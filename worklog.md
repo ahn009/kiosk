@@ -627,3 +627,274 @@ Unresolved / Notes:
 - Next phase candidates (for recurring webDevReview): enrollment wizard live
   capture test, CSV bulk import, PWA mobile companion, webhook config wiring,
   threshold calibration UI, per-kiosk config editor stress test.
+
+---
+Task ID: 5
+Agent: full-stack-developer
+Task: Build "Threshold Calibration" admin view (per-kiosk FAR/FRR ROC calibration) + simulated calibration backend route, wired into the admin shell navigation.
+
+Work Log:
+- Read worklog.md (Tasks 1-4 complete: backend, admin dashboard, kiosk, integration). Reviewed store.ts (AdminSection type + setter), api-client.ts (api + apiClient.kiosks.list/update), types.ts (KioskDTO has thresholdGranted/thresholdChallenge/challengeMode/crlVersion/configVersion), auth-runtime.ts (requireRole), admin-shell.tsx (NAV_ITEMS + SECTION_TITLES + section dispatch), admin-app.tsx, lib/ui-bits.tsx (ViewContainer, EmptyState, KpiCard, ScoreBar), lib/admin-utils.ts (asArray, formatPct, formatters), dashboard-view.tsx (chart + recharts patterns + oklch color palette), kiosks-view.tsx (slider + dialog patterns + set-state-in-effect workaround via key remount). Confirmed scope: create calibration-view.tsx + calibration route, modify store.ts + admin-shell.tsx, NOT modify any other files.
+- Created `src/app/api/v1/calibration/route.ts` — POST endpoint, role-gated
+  to security_officer + superadmin via `requireRole`, `export const
+  dynamic = "force-dynamic"`. Body: `{ kioskId, genuineCount?, impostorCount? }`
+  (counts default to 50/50, clamped to [1, 500]).
+  * Gaussian generator: Box-Muller transform from `Math.random()` (two
+    uniform samples → standard normal via `sqrt(-2 ln u1) * cos(2π u2)`).
+  * Genuine scores ~ Normal(μ=0.92, σ=0.05), clamped [0,1].
+  * Impostor scores ~ Normal(μ=0.35, σ=0.12), clamped [0,1].
+  * ROC: thresholds 0.0 → 1.0 step 0.01; for each, FAR = P(impostor ≥
+    threshold) and FRR = P(genuine < threshold). 101 roc points.
+  * optimalThreshold: lowest threshold where FAR ≤ 0.001 (0.1%); if none
+    satisfies, pick the threshold minimising (FAR + FRR).
+  * AUC: trapezoidal integration of TPR (1 - FRR) over FAR (sorted
+    ascending), clamped to [0, 1].
+  * Returns `{ kioskId, genuineScores[], impostorScores[], roc[],
+    optimalThreshold, summary: { genuineCount, impostorCount,
+    meanGenuine, meanImpostor, auc } }`.
+- Created `src/components/admin/views/calibration-view.tsx` — chart-rich
+  view, 2 components:
+  * `CalibrationView` (parent): fetches kiosks list via useQuery
+    (`asArray<KioskDTO>` helper to handle `{items:T[]}` vs `T[]` shape);
+    holds `selectedKioskId` state; derives effective kiosk id WITHOUT
+    setState-in-effect (eslint rule) — uses a derived value computed from
+    the kiosks list each render. Renders header (title "Threshold
+    Calibration" + Gauge icon + subtitle explaining the FAR ≤ 0.001% /
+    FRR ≤ 2% targets + kiosk Select dropdown), info callout Alert
+    ("Simulated calibration — do not hardcode 0.85"), and the workspace
+    child component keyed by `selectedKiosk.kioskId` (so switching kiosks
+    remounts the workspace → state resets to the new kiosk's saved
+    thresholds, no effect body needed).
+  * `CalibrationWorkspace` (child, key=kioskId): receives kiosk prop;
+    holds `genuineCount`/`impostorCount` inputs (default 50/50), `result`
+    state (CalibrationResponse | null), and `manualGrant`/`manualChallenge`
+    state initialised from the kiosk's saved thresholds. Three mutations:
+    (1) `runMutation` — POST /calibration → setResult + toast "Calibration
+    complete · AUC X.XXX"; (2) `applyMutation` — PATCH kiosks[id] with
+    `{ thresholdGranted: optimal, thresholdChallenge: max(0.4,
+    optimal-0.1) }` → on success: setManualGrant(optimal),
+    setManualChallenge(challenge), invalidateQueries(['kiosks']), toast
+    "Thresholds applied to {kioskId}"; (3) `saveManualMutation` — PATCH
+    kiosks[id] with current manual values → invalidateQueries + toast
+    "Thresholds saved to {kioskId}". All mutations show Loader2 spinner
+    inside the button while pending.
+  * Empty state: before first run, the workspace renders an EmptyState
+    card with the Gauge icon, "No calibration data yet" title, short
+    explanation, and a "Run first calibration" button that triggers the
+    same runMutation.
+  * Run Calibration card: ALWAYS visible at the top (even after first
+    run, for re-runs) — Genuine count + Impostor count number inputs +
+    Run Calibration button with loading state.
+  * Metrics grid (6 cards via inline MetricCard component): AUC, Genuine
+    μ (with N hint), Impostor μ (with N hint), Genuine N, Impostor N,
+    FAR @ T_grant (interpolated from roc by finding the closest roc
+    point to the manualGrant threshold). Uses color accents (success
+    green for genuine, destructive red for impostor, warning amber for
+    FAR above target). Framer Motion fade-in for each card.
+  * ROC chart (recharts LineChart): x-axis = FAR (linear 0-1, ticks at
+    0/0.2/0.4/0.6/0.8/1, tickFormatter "%"); y-axis = same. Two lines:
+    FRR (warning amber) and TPR (success green), `isAnimationActive=
+    false` to avoid the line "draw-in" animation competing with the
+    optimal-point ReferenceDot. ReferenceDot at the optimal operating
+    point (FAR_optimal, TPR_optimal) with primary emerald fill + label
+    "T=X.XX". Custom Tooltip + Legend ("FRR" / "TPR (1-FRR)").
+  * Score distribution chart (recharts AreaChart): 20 bins of width 0.05
+    covering [0,1]; for each bin counts genuine + impostor scores in that
+    range. Two overlapping Areas: Genuine (success green with vertical
+    gradient fill) and Impostor (destructive red with vertical gradient
+    fill), `type="step"` for histogram look. Two vertical ReferenceLines:
+    manualGrant (primary emerald, dashed, top label "T_grant X.XX") and
+    manualChallenge (warning amber, dashed, bottom label "T_chal X.XX")
+    — these update LIVE as the user drags the manual tuner sliders.
+  * Recommended Thresholds panel: shows optimal T_grant (big primary
+    number), current kiosk T_grant + T_challenge (2-col grid), AUC card
+    with CheckCircle2 icon, and "Apply recommended thresholds" button.
+  * Manual threshold tuner: two shadcn Slider components — grant
+    (0.5-0.99) and challenge (0.4-0.95) bound to manualGrant/
+    manualChallenge state. Live-updates the distribution chart
+    ReferenceLines (no API call). Shows warning if challenge ≥ grant.
+    "Save to kiosk" button disabled while pending or while challenge ≥
+    grant. Shows current saved values + config version for context.
+  * Styling: Tailwind theme tokens throughout (bg-card, text-primary,
+    border-border, bg-muted, etc.); NO indigo/blue. Primary emerald via
+    oklch(0.58 0.14 162); success via oklch(0.6 0.16 152); destructive
+    via oklch(0.62 0.18 25); warning via oklch(0.72 0.16 70) — matches
+    dashboard-view's chart palette. p-6 containers, p-4/p-5 inner cards,
+    gap-4/6 spacing. Charts ResponsiveContainer height 300. Responsive:
+    metric grid stacks 2/3/6 cols, ROC+recommended stacks 1/3 cols on
+    mobile, manual tuner stacks 1/2 cols.
+  * framer-motion ViewContainer wrapper for the view fade-in (matches
+    dashboard-view pattern).
+- Modified `src/lib/store.ts`: extended `AdminSection` type to add
+  `"calibration"` (between "kiosks" and "security").
+- Modified `src/components/admin/admin-shell.tsx`:
+  * Added `Gauge` to lucide-react imports.
+  * Added `CalibrationView` import.
+  * Added NAV_ITEMS entry: `{ id: "calibration", label: "Calibration",
+    icon: Gauge, roles: ["superadmin", "security_officer"] }` — inserted
+    AFTER "kiosks" and BEFORE "security" (matches spec). Role-gated to
+    security_officer + superadmin (same as Kiosks + Security).
+  * Added SECTION_TITLES entry: `calibration: "Threshold Calibration"`.
+  * Added section dispatch line: `activeSection === "calibration" &&
+    <CalibrationView />` (after the KiosksView line, before SecurityView).
+- Did NOT modify admin-app.tsx — the section rendering dispatch lives in
+  admin-shell.tsx (not admin-app.tsx, which is just the auth gate
+  rendering LoginView vs AdminShell). The spec instruction to "render
+  CalibrationView when adminSection === 'calibration' in admin-app.tsx"
+  was a misread of the architecture; the actual render happens in
+  admin-shell.tsx where the dispatch switch lives.
+- Did NOT touch page.tsx, layout.tsx, api-client.ts, types.ts, crypto.ts,
+  auth.ts, db.ts, any other route, src/components/kiosk/*, all other
+  admin views (dashboard, employees, enrollment, audit, kiosks,
+  security), or the launcher — per scope.
+- Ran `bun run lint` → clean (0 errors).
+- Ran `bunx tsc --noEmit` → no errors in calibration files.
+- Verified end-to-end with agent-browser:
+  * Opened http://localhost:3000/, clicked Admin Dashboard, quick-fill
+    "Super Admin" (admin@acme.io), clicked Sign in → dashboard.
+  * Clicked "Calibration" nav button → view loaded with: "Threshold
+    Calibration" title + Gauge icon + subtitle + kiosk Select
+    (KSK-001 · Main Lobby preselected), info callout Alert, Run
+    Calibration card with Genuine/Impostor count inputs (50/50) +
+    Run button, and the "No calibration data yet" empty state with
+    Run first calibration button.
+  * Clicked "Run Calibration" → toast "Calibration complete · AUC
+    0.991". The Recommended Thresholds panel appeared (with optimal
+    T_grant + current saved + AUC card + Apply button), the Manual
+    Threshold Tuner card appeared (sliders at saved values: grant=0.86,
+    challenge=0.60), and the ROC chart + Score Distribution chart +
+    Metrics grid all rendered.
+  * Confirmed via `agent-browser eval`: 6 `svg.recharts-surface`
+    elements on page (multiple per chart incl. tooltip), 2
+    `.recharts-line` (FRR + TPR), 2 `.recharts-area` (genuine +
+    impostor) — all charts present.
+  * Clicked "Apply recommended thresholds" → toast "Thresholds applied
+    to KSK-001". The manual tuner sliders updated LIVE to grant=0.61,
+    challenge=0.51 (matching the optimalThreshold - 0.1 logic,
+    clamped to ≥0.4). The distribution chart's ReferenceLines
+    repositioned to the new values.
+  * Clicked "Save to kiosk" → toast "Thresholds saved to KSK-001".
+    Manual tuner persists the values.
+  * No page errors in `agent-browser errors` and no error-level
+    console messages. Dev log confirms: `POST /api/v1/calibration 200`,
+    `PATCH /api/v1/kiosks/{id} 200` (twice — apply + save), `GET
+    /api/v1/kiosks 200` (refetch after invalidate).
+  * Role-gating is wired the same way as Kiosks/Security (added to the
+    `roles` array of the nav item) — visible only to security_officer +
+    superadmin. viewer and hr_admin do not see the Calibration nav.
+
+Stage Summary:
+- 1 backend route created: `src/app/api/v1/calibration/route.ts` (POST).
+  Simulated ROC calibration: Box-Muller Gaussian generator, 101-point
+  ROC curve, optimal threshold at FAR ≤ 0.1%, AUC via trapezoidal
+  integration. Role-gated to security_officer + superadmin.
+- 1 view file created: `src/components/admin/views/calibration-view.tsx`
+  (~720 lines, 2 components + MetricCard). Full UI: header + kiosk
+  selector, info callout, run card with count inputs, metrics grid
+  (6 KPIs), ROC chart (LineChart with FRR + TPR lines + optimal-point
+  ReferenceDot), score distribution chart (AreaChart with genuine +
+  impostor overlapping areas + live-updating ReferenceLines for manual
+  thresholds), recommended thresholds panel (with Apply button),
+  manual threshold tuner (two sliders + Save button), and empty state
+  before first run. Framer Motion view fade-in via ViewContainer.
+  All recharts charts use ResponsiveContainer height 300. Responsive
+  layout (grids stack on mobile). NO indigo/blue; emerald primary via
+  oklch matching dashboard-view palette.
+- 3 files modified: `src/lib/store.ts` (extended AdminSection type),
+  `src/components/admin/admin-shell.tsx` (added Gauge import +
+  CalibrationView import + NAV_ITEMS entry + SECTION_TITLES entry +
+  section dispatch line).
+- Lint clean (0 errors). TypeScript clean (no errors in calibration
+  files). Dev server stable on :3000. End-to-end verified in browser
+  against seeded SQLite — calibration runs, charts render, Apply
+  Recommended Thresholds + Save to Kiosk mutations both persist via
+  PATCH /api/v1/kiosks/[id] and invalidate the kiosks query for
+  reactive UI.
+- All scope constraints respected: did NOT touch page.tsx, layout.tsx,
+  store.ts internals (only extended the AdminSection type — additive
+  change), api-client.ts, types.ts, crypto.ts, auth.ts, db.ts, any
+  other route, src/components/kiosk/, all other admin views, or the
+  launcher.
+- Did NOT modify admin-app.tsx — the CalibrationView render dispatch
+  was added to admin-shell.tsx where the existing section→view dispatch
+  switch lives (admin-app.tsx is only the auth gate that renders
+  LoginView vs AdminShell).
+
+---
+Task ID: 6
+Agent: orchestrator (main) — webDevReview round 1
+Task: QA, bug fixes, new features (Mobile Companion + Threshold Calibration), styling polish
+
+Work Log:
+- QA via agent-browser found & fixed 3 bugs:
+  1. React key warning in Launcher: `key={k.id}` but the public kiosks endpoint
+     returns no `id` field → all keys undefined. Fixed → `key={k.kioskId}`.
+  2. Hydration error "<div> cannot be a descendant of <p>": dashboard KPI cards
+     used `<p>` containing `<Skeleton>` (a div). Fixed 3 instances in
+     dashboard-view.tsx (FAR/FRR/spoof cards) → `<div>` wrappers.
+  3. Soft-deleted (anonymized) employees still appeared in enrollment picker &
+     counts. Added `fullName: { not: "Deleted User" }` filter to employees GET,
+     dashboard stats counts, and POST duplicate-check. Marked the 3 leftover
+     test employees as deleted. (Also added a `deletedAt` column to schema for
+     forward-compat, but the running server's cached Prisma client can't query
+     it, so runtime filtering uses the fullName marker.)
+- NEW FEATURE: Mobile Companion (employee self-service PWA mode)
+  - 4 backend routes under /api/v1/mobile/: login (by employeeCode → mobile
+    session token), me (profile + card status + today's scans + last entry +
+    recent alerts), scans (paginated own history), report-lost (instant revoke:
+    adds cardTokenHash to CRL, sets cardStatus=lost, bumps CRL version, logs
+    admin action as self-service).
+  - `src/lib/mobile-session.ts` — globalThis-backed employee session store
+    (distinct from admin sessions, 1h TTL, single-active per employee).
+  - `src/components/mobile/mobile-app.tsx` — phone-framed PWA UI: login screen
+    w/ quick codes, dashboard (avatar, card status, today's scans, last entry,
+    report-lost w/ confirm dialog), History tab (timeline of scans w/ match %,
+    latency, offline badges), Alerts tab (failed attempts w/ security guidance).
+  - api-client: added `mobile.*` methods + `skipAuth` option to `api()` so
+    mobile calls attach the mobile token (not the admin token).
+  - Store: added `mobile` AppMode + `mobileToken` state (persisted).
+  - page.tsx: renders MobileApp when mode==="mobile".
+- NEW FEATURE: Threshold Calibration admin view (via subagent Task 5)
+  - POST /api/v1/calibration — Box-Muller Gaussian genuine (μ=0.92,σ=0.05) +
+    impostor (μ=0.35,σ=0.12) score simulation, 101-point ROC curve, optimal
+    threshold at FAR≤0.001, trapezoidal AUC.
+  - calibration-view.tsx — ROC chart (FRR+TPR lines, optimal-point dot),
+    score-distribution area chart w/ live threshold reference lines, metrics
+    grid (AUC/μ/N/FAR@T_grant), recommended-thresholds panel w/ Apply button,
+    manual threshold tuner (sliders → PATCH kiosk), empty state. Wired into
+    admin shell nav (Gauge icon, security+superadmin gated).
+- STYLING POLISH: Launcher — decorative animated gradient orbs background for
+  depth, 3rd "Mobile Companion" card (grid now lg:grid-cols-3), refined
+  relative layering so content sits above orbs. Mobile companion uses a realistic
+  phone frame (notch, status bar, home indicator).
+- Verified end-to-end in agent-browser (all 200, console clean):
+  1. Launcher: 3 cards (Admin/Kiosk/Mobile) + 4 kiosk cards + orbs render.
+  2. Mobile: login EMP-1001 → dashboard (James Carter, Active card, scans today,
+     last entry) → History timeline (granted scans w/ match%) → Alerts (denied
+     attempt w/ security msg) → report-lost (confirm → card=Lost, toast, CRL
+     bumped). Restored EMP-1001 to active after test.
+  3. Admin calibration: Run → ROC + distribution charts render (6 recharts
+     surfaces), metrics + recommended thresholds, Apply → PATCH kiosk 200.
+  4. Kiosk full flow still works: EMP-1001 → Access Granted + Gate triggered.
+  5. Lint clean (0 errors). Dev server stable.
+
+Stage Summary:
+- 3 QA bugs fixed (key warning, hydration, deleted-employee leakage).
+- 2 major features added: Mobile Companion PWA (full self-service incl. instant
+  card revocation) + Threshold Calibration view (ROC/distribution visualization
+  + per-kiosk threshold tuning).
+- Styling polished (launcher orbs, phone frame, 3-card layout).
+- App now has 4 user surfaces: Launcher, Admin Dashboard (7 sections incl.
+  calibration), Kiosk, Mobile Companion.
+
+Unresolved / Notes:
+- `deletedAt` schema column exists but running server's cached Prisma client
+  can't query it (would need server restart). Runtime filtering via fullName
+  marker works correctly. After a server restart, `deletedAt` queries could be
+  adopted for a cleaner soft-delete.
+- Mobile login is by employee code only (demo). Real impl would use magic link /
+  registered device / card+PIN. Noted in the login UI.
+- Next-phase candidates: CSV bulk employee import, PWA service worker + web
+  push (VAPID) for real security alerts, SIEM webhook export wiring, per-employee
+  detail page with scan-history timeline + stats charts, WebSocket /ws/alerts
+  for real-time lockdown/failed-scan push to admin dashboard.

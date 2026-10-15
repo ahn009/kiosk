@@ -16,6 +16,7 @@ import {
   Camera,
   Database,
   Zap,
+  Smartphone,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -51,10 +52,21 @@ export function Launcher() {
     setMode("kiosk");
   };
 
+  const enterMobile = () => {
+    setMode("mobile");
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="relative min-h-screen flex flex-col bg-background overflow-hidden">
+      {/* Decorative gradient orbs */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        <div className="absolute -top-24 -left-24 size-96 rounded-full bg-primary/10 blur-3xl animate-pulse" style={{ animationDuration: "6s" }} />
+        <div className="absolute top-1/3 -right-32 size-80 rounded-full bg-teal-500/10 blur-3xl animate-pulse" style={{ animationDuration: "8s", animationDelay: "1s" }} />
+        <div className="absolute -bottom-32 left-1/3 size-72 rounded-full bg-emerald-400/10 blur-3xl animate-pulse" style={{ animationDuration: "7s", animationDelay: "2s" }} />
+      </div>
+
       {/* Header */}
-      <header className="border-b border-border/60 bg-card/50 backdrop-blur-sm sticky top-0 z-30">
+      <header className="relative border-b border-border/60 bg-card/50 backdrop-blur-sm sticky top-0 z-30">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="size-9 rounded-xl bg-gradient-to-br from-primary to-teal-700 flex items-center justify-center shadow-lg shadow-primary/20">
@@ -81,7 +93,7 @@ export function Launcher() {
         </div>
       </header>
 
-      <main className="flex-1 mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
+      <main className="relative flex-1 mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
         {/* Hero */}
         <motion.section
           initial={{ opacity: 0, y: 12 }}
@@ -106,8 +118,8 @@ export function Launcher() {
           </p>
         </motion.section>
 
-        {/* Two big cards */}
-        <section className="mt-12 grid gap-6 md:grid-cols-2 max-w-4xl mx-auto">
+        {/* Three big cards */}
+        <section className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
           {/* Admin */}
           <motion.button
             initial={{ opacity: 0, x: -12 }}
@@ -181,6 +193,41 @@ export function Launcher() {
               </div>
             </Card>
           </motion.button>
+
+          {/* Mobile */}
+          <motion.button
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            onClick={enterMobile}
+            className="group text-left md:col-span-2 lg:col-span-1"
+          >
+            <Card className="relative overflow-hidden p-6 sm:p-7 h-full border-border/60 hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 cursor-pointer bg-gradient-to-br from-card to-emerald-950/5">
+              <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none" />
+              <div className="relative">
+                <div className="flex items-center justify-between">
+                  <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Smartphone className="size-6" />
+                  </div>
+                  <ArrowRight className="size-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                </div>
+                <h3 className="mt-5 text-xl font-semibold">Mobile Companion</h3>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Employee self-service PWA — view your scan history, card
+                  status, and report a lost card for instant revocation.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {["Self-service", "Scan history", "Lost card", "Alerts"].map(
+                    (t) => (
+                      <Badge key={t} variant="secondary" className="font-normal">
+                        {t}
+                      </Badge>
+                    )
+                  )}
+                </div>
+              </div>
+            </Card>
+          </motion.button>
         </section>
 
         {/* Kiosk selector */}
@@ -195,7 +242,7 @@ export function Launcher() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {kiosks.map((k) => (
                 <button
-                  key={k.id}
+                  key={k.kioskId}
                   onClick={() => enterKiosk(k.kioskId)}
                   className="group"
                 >
@@ -275,7 +322,7 @@ export function Launcher() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border/60 bg-card/30 mt-auto">
+      <footer className="relative border-t border-border/60 bg-card/30 mt-auto">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <Building2 className="size-3.5" />

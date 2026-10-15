@@ -36,6 +36,7 @@ model Employee {
   pinHash        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  deletedAt      DateTime? // GDPR soft-delete timestamp; null = active
 
   scans       ScanEvent[]
   enrollments Enrollment[]

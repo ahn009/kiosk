@@ -9,6 +9,7 @@ import {
   ScanFace,
   FileSearch,
   Cpu,
+  Gauge,
   ShieldAlert,
   ShieldCheck,
   Sun,
@@ -49,6 +50,7 @@ import { EmployeesView } from "./views/employees-view";
 import { EnrollmentView } from "./views/enrollment-view";
 import { AuditView } from "./views/audit-view";
 import { KiosksView } from "./views/kiosks-view";
+import { CalibrationView } from "./views/calibration-view";
 import { SecurityView } from "./views/security-view";
 
 interface NavItem {
@@ -64,6 +66,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "enrollment", label: "Enrollment", icon: ScanFace, roles: ["superadmin", "hr_admin"] },
   { id: "audit", label: "Audit Trail", icon: FileSearch, roles: ["superadmin", "security_officer", "viewer"] },
   { id: "kiosks", label: "Kiosks", icon: Cpu, roles: ["superadmin", "security_officer"] },
+  { id: "calibration", label: "Calibration", icon: Gauge, roles: ["superadmin", "security_officer"] },
   { id: "security", label: "Security", icon: ShieldAlert, roles: ["superadmin", "security_officer"] },
 ];
 
@@ -73,6 +76,7 @@ const SECTION_TITLES: Record<AdminSection, string> = {
   enrollment: "Face Enrollment Wizard",
   audit: "Audit Trail",
   kiosks: "Kiosk Fleet",
+  calibration: "Threshold Calibration",
   security: "Security Center",
 };
 
@@ -353,6 +357,7 @@ export function AdminShell() {
                 {activeSection === "enrollment" && <EnrollmentView />}
                 {activeSection === "audit" && <AuditView />}
                 {activeSection === "kiosks" && <KiosksView />}
+                {activeSection === "calibration" && <CalibrationView />}
                 {activeSection === "security" && <SecurityView />}
               </motion.div>
             </AnimatePresence>

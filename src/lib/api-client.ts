@@ -25,13 +25,14 @@ export async function api<T = unknown>(
     body?: unknown;
     headers?: Record<string, string>;
     raw?: boolean;
+    skipAuth?: boolean;
   } = {}
 ): Promise<T> {
   const token = tokenGetter?.();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(opts.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(!opts.skipAuth && token ? { Authorization: `Bearer ${token}` } : {}),
   };
   const res = await fetch(`${API_PREFIX}${path}`, {
     method: opts.method || "GET",
@@ -225,5 +226,70 @@ export const apiClient = {
           employeeCode: string | null;
         }[]
       >("/revocations"),
+  },
+  mobile: {
+    login: (employeeCode: string) =>
+      api<{
+        token: string;
+        employee: {
+          id: string;
+          employeeCode: string;
+          fullName: string;
+          designation: string | null;
+          departmentName: string | null;
+          accessLevel: number;
+          photoUrl: string | null;
+          cardStatus: string;
+          cardExpiresAt: string | null;
+          faceEnrolled: boolean;
+        };
+      }>("/mobile/login", { method: "POST", body: { employeeCode } }),
+    me: (mobileToken: string) =>
+      api<{
+        employee: {
+          id: string;
+          employeeCode: string;
+          fullName: string;
+          designation: string | null;
+          departmentName: string | null;
+          accessLevel: number;
+          photoUrl: string | null;
+          cardStatus: string;
+          cardExpiresAt: string | null;
+          faceEnrolled: boolean;
+        };
+        todayScans: number;
+        lastEntry: { at: string; kioskId: string } | null;
+        alerts: {
+          id: number;
+          at: string;
+          kioskId: string;
+          decision: string;
+          faceMatchStatus: string | null;
+          faceMatchScore: number | null;
+        }[];
+      }>("/mobile/me", { skipAuth: true, headers: { Authorization: `Bearer ${mobileToken}` } }),
+    scans: (mobileToken: string, page = 1) =>
+      api<{
+        items: {
+          id: number;
+          kioskId: string;
+          decision: string;
+          faceMatchStatus: string | null;
+          faceMatchScore: number | null;
+          latencyMs: number | null;
+          offline: boolean;
+          createdAt: string;
+        }[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+      }>(`/mobile/scans?page=${page}`, { skipAuth: true, headers: { Authorization: `Bearer ${mobileToken}` } }),
+    reportLost: (mobileToken: string, reason?: string) =>
+      api<{ ok: boolean; cardStatus: string; message: string }>(
+        "/mobile/report-lost",
+        { method: "POST", body: { reason }, skipAuth: true, headers: { Authorization: `Bearer ${mobileToken}` } }
+      ),
   },
 };

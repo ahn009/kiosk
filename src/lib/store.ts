@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AdminUserDTO, AdminRole } from "@/lib/types";
 
-export type AppMode = "launcher" | "admin" | "kiosk";
+export type AppMode = "launcher" | "admin" | "kiosk" | "mobile";
 
 export type AdminSection =
   | "dashboard"
@@ -12,6 +12,7 @@ export type AdminSection =
   | "enrollment"
   | "audit"
   | "kiosks"
+  | "calibration"
   | "security";
 
 interface AppState {
@@ -30,6 +31,10 @@ interface AppState {
   // enrollment target (so enrollment wizard opens for a chosen employee)
   enrollmentTargetId: string | null;
   setEnrollmentTargetId: (id: string | null) => void;
+
+  // mobile companion session (employee self-service)
+  mobileToken: string | null;
+  setMobileToken: (t: string | null) => void;
 
   // auth
   authToken: string | null;
@@ -54,6 +59,9 @@ export const useAppStore = create<AppState>()(
       enrollmentTargetId: null,
       setEnrollmentTargetId: (enrollmentTargetId) => set({ enrollmentTargetId }),
 
+      mobileToken: null,
+      setMobileToken: (mobileToken) => set({ mobileToken }),
+
       authToken: null,
       admin: null,
       login: (token, admin) => set({ authToken: token, admin }),
@@ -76,6 +84,7 @@ export const useAppStore = create<AppState>()(
         admin: s.admin,
         mode: s.mode,
         kioskId: s.kioskId,
+        mobileToken: s.mobileToken,
       }),
     }
   )

@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
   const departmentId = url.searchParams.get("department_id") || undefined;
   const status = url.searchParams.get("status") || undefined;
 
-  const where: Record<string, unknown> = {};
+  // Hide soft-deleted (anonymized) employees from all listings.
+  const where: Record<string, unknown> = { fullName: { not: "Deleted User" } };
   if (q) {
     where.OR = [
       { fullName: { contains: q } },
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest) {
     return fail("accessLevel must be between 1 and 5", 400);
   }
 
-  const existing = await db.employee.findUnique({
-    where: { employeeCode: body.employeeCode },
+  const existing = await db.employee.findFirst({
+    where: { employeeCode: body.employeeCode, fullName: { not: "Deleted User" } },
   });
   if (existing) {
     return fail("Employee code already exists", 409);
