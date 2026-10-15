@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import {
   FileSearch,
   Filter,
@@ -14,6 +14,7 @@ import {
   UserX,
   Eye,
   X,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,7 +67,6 @@ const DECISIONS: Decision[] = [
 export function AuditView() {
   const admin = useAppStore((s) => s.admin);
 
-  const [page, setPage] = useState(1);
   const [kioskFilter, setKioskFilter] = useState<string>("all");
   const [decisionFilter, setDecisionFilter] = useState<string>("all");
   const [employeeSearch, setEmployeeSearch] = useState<string>("");
@@ -81,29 +81,53 @@ export function AuditView() {
   });
   const kiosks = kiosksRaw ?? [];
 
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: [
-      "audit-scans",
-      page,
-      kioskFilter,
-      decisionFilter,
-      employeeSearch,
-      dateFrom,
-      dateTo,
-    ],
-    queryFn: () =>
-      apiClient.audit.scans({
-        kiosk_id: kioskFilter === "all" ? undefined : kioskFilter,
-        decision: decisionFilter === "all" ? undefined : decisionFilter,
-        from: dateFrom ? new Date(dateFrom).toISOString() : undefined,
-        to: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : undefined,
-        page,
-      }),
-    placeholderData: (prev) => prev,
-  });
+  const { data, isLoading, isFetching, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: [
+        "audit-scans",
+        kioskFilter,
+        decisionFilter,
+        employeeSearch,
+        dateFrom,
+        dateTo,
+      ],
+      queryFn: ({ pageParam }) =>
+        apiClient.audit.scans({
+          kiosk_id: kioskFilter === "all" ? undefined : kioskFilter,
+          decision: decisionFilter === "all" ? undefined : decisionFilter,
+          from: dateFrom ? new Date(dateFrom).toISOString() : undefined,
+          to: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : undefined,
+          page: pageParam,
+        }),
+      initialPageParam: 1,
+      getNextPageParam: (lastPage) =>
+        lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
+      placeholderData: (prev) => prev,
+    });
 
-  const items = data?.items ?? [];
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / 25)) : 1;
+  // Accumulate items across pages
+  const items = (data?.pages ?? []).flatMap((p) => p.items);
+  const totalCount = data?.pages?.[0]?.total ?? 0;
+  const loadedCount = items.length;
+
+  // Infinite scroll sentinel
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const handleIntersect = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage]
+  );
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(handleIntersect, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [handleIntersect]);
 
   function resetFilters() {
     setKioskFilter("all");
@@ -111,7 +135,6 @@ export function AuditView() {
     setEmployeeSearch("");
     setDateFrom("");
     setDateTo("");
-    setPage(1);
   }
 
   function exportCsv() {
@@ -155,7 +178,7 @@ export function AuditView() {
             Audit Trail
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Immutable log of every scan event · {data?.total ?? 0} records matching filters
+            Immutable log of every scan event · {totalCount} records matching filters · {loadedCount} loaded
           </p>
         </div>
         <Button variant="outline" onClick={exportCsv} disabled={items.length === 0}>
@@ -174,7 +197,6 @@ export function AuditView() {
               value={employeeSearch}
               onChange={(e) => {
                 setEmployeeSearch(e.target.value);
-                setPage(1);
               }}
               className="mt-1"
             />
@@ -185,7 +207,6 @@ export function AuditView() {
               value={kioskFilter}
               onValueChange={(v) => {
                 setKioskFilter(v);
-                setPage(1);
               }}
             >
               <SelectTrigger className="mt-1 w-full">
@@ -207,7 +228,6 @@ export function AuditView() {
               value={decisionFilter}
               onValueChange={(v) => {
                 setDecisionFilter(v);
-                setPage(1);
               }}
             >
               <SelectTrigger className="mt-1 w-full">
@@ -230,7 +250,6 @@ export function AuditView() {
               value={dateFrom}
               onChange={(e) => {
                 setDateFrom(e.target.value);
-                setPage(1);
               }}
               className="mt-1"
             />
@@ -242,7 +261,6 @@ export function AuditView() {
               value={dateTo}
               onChange={(e) => {
                 setDateTo(e.target.value);
-                setPage(1);
               }}
               className="mt-1"
             />
@@ -397,33 +415,24 @@ export function AuditView() {
       </div>
 
       {/* Pagination */}
-      {data && data.total > 25 && (
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
-            Page {page} of {totalPages} · {data.total} total
-          </p>
-          <div className="flex gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1 || isFetching}
-            >
-              <ChevronLeft className="size-4" />
-              Prev
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || isFetching}
-            >
-              Next
-              <ChevronRight className="size-4" />
-            </Button>
+      {/* Load more / infinite scroll sentinel */}
+      <div ref={sentinelRef} className="flex items-center justify-center py-4 min-h-[60px]">
+        {isFetchingNextPage ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading more records…
           </div>
-        </div>
-      )}
+        ) : hasNextPage ? (
+          <Button variant="outline" size="sm" onClick={() => fetchNextPage()}>
+            <ChevronRight className="size-4" />
+            Load more records
+          </Button>
+        ) : loadedCount > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            End of audit trail · {loadedCount} of {totalCount} records loaded
+          </p>
+        ) : null}
+      </div>
 
       <EventDetailSheet event={detailEvent} onClose={() => setDetailEvent(null)} canViewSnapshot={!!admin} />
     </ViewContainer>

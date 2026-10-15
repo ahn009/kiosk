@@ -1253,3 +1253,62 @@ Unresolved / Notes:
   wizard live camera capture polish, threshold calibration history
   persistence, role-based dashboard variants, audit-trail infinite scroll,
   kiosk auto-status-change simulation (random offline/maintenance events).
+
+---
+Task ID: 11
+Agent: orchestrator (main) — webDevReview round 5
+Task: QA, audit-trail infinite scroll, role-based dashboard variants
+
+Work Log:
+- QA: All admin views cycled via agent-browser — no console errors. App stable.
+- NEW FEATURE: Audit-trail infinite scroll
+  - Refactored audit-view.tsx from page-based pagination (useQuery + page
+    state) to useInfiniteQuery — accumulates items across pages, Intersection-
+    Observer auto-loads next page when sentinel enters viewport (200px margin).
+  - Removed `page`/`setPage` state; filter changes reset the infinite query
+    automatically (filters are in the queryKey).
+  - Updated api-client.audit.scans type to include pageSize + totalPages.
+  - New "Load more records" button + "End of audit trail · X of Y loaded"
+    end state + "Loading more records…" spinner. Header shows
+    "X records matching filters · Y loaded".
+  - Verified: opened audit view → "114 records · 25 loaded" → clicked Load
+    more → "50 loaded" (page 1+2 accumulated). Auto-scroll sentinel works.
+    Console clean.
+- NEW FEATURE: Role-based dashboard variants
+  - Dashboard reads admin.role from the store and renders a role-specific
+    banner (name + role label + focus description + role-tinted gradient) with
+    a CTA button for the role's primary action (security_officer→Security,
+    hr_admin→Employees; superadmin/viewer have no CTA).
+  - Role-specific quick-action cards at the bottom of the dashboard
+    (roleQuickActions function): superadmin→[Employees, Enrollment,
+    Calibration, Security]; security_officer→[Audit, Security, Kiosks,
+    Calibration]; hr_admin→[Employees, Enrollment, Audit, Kiosks];
+    viewer→[Audit, Kiosks, Security, Enrollment]. Each card navigates to
+    its section.
+  - 4 roles, each with a distinct dashboard emphasis + accent color:
+    superadmin (primary), security_officer (destructive), hr_admin (emerald),
+    viewer (muted).
+  - Verified: logged in as superadmin (Sarah Chen) → "Full system control"
+    banner + quick actions; logged in as viewer (Tom Becker) → "Read-only
+    overview" banner + different quick actions. Console clean both roles.
+
+- Verified end-to-end (all 200, console clean, lint clean):
+  1. Audit infinite scroll: load-more + accumulation + sentinel.
+  2. Role dashboard: superadmin + viewer variants render correctly.
+  3. All previous features still work.
+
+Stage Summary:
+- 2 features: audit-trail infinite scroll (useInfiniteQuery + Intersection-
+  Observer) + role-based dashboard variants (4 roles, distinct banners +
+  quick actions).
+- App stable; dev server stayed up this round.
+
+Unresolved / Notes:
+- Dev server (port 3000) could stop abruptly (happened in round 4). If the
+  preview goes blank: check `ss -tlnp | grep 3000` and restart with
+  `cd /home/z/my-project && bun run dev &`.
+- Next-phase candidates: PWA service worker + web push (VAPID), enrollment
+  wizard live camera capture polish, threshold calibration history
+  persistence, kiosk auto-status-change simulation, audit-trail detail
+  drawer enhancements (spoof-flag deep inspection), mobile companion
+  push notification wiring.

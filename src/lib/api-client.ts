@@ -192,6 +192,8 @@ export const apiClient = {
         items: import("@/lib/types").ScanEventDTO[];
         total: number;
         page: number;
+        pageSize: number;
+        totalPages: number;
       }>(`/audit/scans?${q.toString()}`);
     },
   },

@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Clock,
   Radio,
+  FileSearch,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -50,6 +51,8 @@ import {
 } from "../lib/admin-utils";
 
 export function DashboardView() {
+  const admin = useAppStore((s) => s.admin);
+  const role = admin?.role ?? "viewer";
   const { data: stats, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: () => apiClient.dashboard.stats(),
@@ -57,6 +60,15 @@ export function DashboardView() {
   });
 
   const setSection = useAppStore((s) => s.setAdminSection);
+
+  // Role config: each role sees a different dashboard emphasis
+  const roleConfig: Record<string, { label: string; focus: string; accent: string; cta?: { label: string; section: "employees" | "enrollment" | "security" | "kiosks" | "audit" | "calibration" } }> = {
+    superadmin: { label: "Super Admin", focus: "Full system control · manage employees, kiosks, security, and calibration.", accent: "from-primary/15 to-transparent" },
+    security_officer: { label: "Security Officer", focus: "Monitor threats, manage lockdowns, review the audit trail and SIEM webhooks.", accent: "from-destructive/10 to-transparent", cta: { label: "Open Security Center", section: "security" } },
+    hr_admin: { label: "HR Administrator", focus: "Manage employees, enroll faces, issue and revoke access cards.", accent: "from-emerald-500/10 to-transparent", cta: { label: "Manage Employees", section: "employees" } },
+    viewer: { label: "Viewer", focus: "Read-only overview · scan metrics, kiosk health, and recent denials.", accent: "from-muted to-transparent" },
+  };
+  const rc = roleConfig[role] ?? roleConfig.viewer;
 
   // Live clock
   const [now, setNow] = useState(() => new Date());
@@ -106,6 +118,31 @@ export function DashboardView() {
           </span>
         </div>
       </div>
+
+      {/* Role banner */}
+      <motion.div
+        initial={{ opacity: 0, y: -6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border bg-gradient-to-r ${rc.accent} px-4 py-3`}
+      >
+        <div className="flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-background/80 flex items-center justify-center shrink-0">
+            <ShieldCheck className="size-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">
+              {admin?.name ?? "User"} <span className="text-muted-foreground font-normal">· {rc.label}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">{rc.focus}</p>
+          </div>
+        </div>
+        {rc.cta && (
+          <Button size="sm" variant="outline" onClick={() => setSection(rc.cta!.section)}>
+            {rc.cta.label}
+            <ArrowRight className="size-3.5" />
+          </Button>
+        )}
+      </motion.div>
 
       {/* Lockdown banner */}
       {stats?.lockdownActive && (
@@ -442,6 +479,45 @@ export function DashboardView() {
           )}
         </CardContent>
       </Card>
+
+      {/* Role-based quick actions */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {roleQuickActions(role).map((a) => (
+          <button key={a.section} onClick={() => setSection(a.section)} className="group text-left">
+            <Card className="p-4 h-full hover:border-primary/40 hover:shadow-md transition-all cursor-pointer">
+              <div className="flex items-center justify-between mb-2">
+                <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <a.icon className="size-4" />
+                </div>
+                <ArrowRight className="size-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+              </div>
+              <p className="text-sm font-semibold">{a.label}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{a.desc}</p>
+            </Card>
+          </button>
+        ))}
+      </div>
     </ViewContainer>
   );
+}
+
+function roleQuickActions(role: string) {
+  const all = {
+    employees: { section: "employees" as const, label: "Employees", desc: "Add, edit, issue cards", icon: Users },
+    enrollment: { section: "enrollment" as const, label: "Enrollment", desc: "Enroll face biometrics", icon: ScanFace },
+    audit: { section: "audit" as const, label: "Audit Trail", desc: "Immutable scan log", icon: FileSearch },
+    kiosks: { section: "kiosks" as const, label: "Kiosks", desc: "Status & thresholds", icon: Cpu },
+    security: { section: "security" as const, label: "Security", desc: "Lockdown & CRL", icon: ShieldAlert },
+    calibration: { section: "calibration" as const, label: "Calibration", desc: "Tune FAR/FRR", icon: Activity },
+  };
+  switch (role) {
+    case "superadmin":
+      return [all.employees, all.enrollment, all.calibration, all.security];
+    case "security_officer":
+      return [all.audit, all.security, all.kiosks, all.calibration];
+    case "hr_admin":
+      return [all.employees, all.enrollment, all.audit, all.kiosks];
+    default:
+      return [all.audit, all.kiosks, all.security, all.enrollment];
+  }
 }
