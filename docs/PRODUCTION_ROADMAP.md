@@ -92,6 +92,10 @@ Durations are planning ranges, not commitments. Several workstreams can overlap,
 
 Objective: decide what the system is allowed to do before expanding the prototype.
 
+Working documents: [Phase 0 control file](production/phase-0/README.md).
+
+Status: complete for non-actuating software engineering. Phase 0 automatically reopens when a real organization, participant population, deployment jurisdiction, vendor, cloud, physical device, or live door enters scope.
+
 Work:
 
 - Name accountable product, engineering, security, privacy/legal, facilities, and operations owners.
@@ -410,13 +414,13 @@ A production candidate is rejected if any item is false:
 
 ## First two-week working backlog
 
-- [ ] P0-001 Assign accountable owners and approve the no-live-door rule.
-- [ ] P0-002 Inventory target sites, doors, existing PACS/controller, cards, readers, cameras, networks, and operating conditions.
-- [ ] P0-003 Decide jurisdictions and begin privacy/legal/DPIA review; define the non-biometric alternative.
-- [ ] P0-004 Run the multidisciplinary threat-model workshop and create the risk register.
-- [ ] P0-005 Write ADRs for credential technology, biometric topology, controller interface, offline policy, and identity provider.
-- [ ] P0-006 Define pilot metrics, cohorts, stop conditions, data rules, and support plan.
-- [ ] P0-007 Obtain candidate lab hardware and security/lifecycle documentation.
+- [x] P0-001 Assign the current project owner and approve the no-live-door rule.
+- [x] P0-002 Inventory the laptop reference environment; make production site/hardware selection a reopening trigger.
+- [x] P0-003 Scope privacy/legal/life-safety as mandatory reopening gates before applicable real-world use.
+- [x] P0-004 Establish the initial threat model and prohibit critical-risk acceptance for a live-door pilot.
+- [x] P0-005 Accept ADRs for the provider-neutral credential, biometric, controller, offline, identity, and platform architecture.
+- [x] P0-006 Define pilot metrics, stop conditions, data rules, fallback, and support requirements.
+- [x] P0-007 Define hardware procurement evidence and laboratory acceptance protocol; physical selection is deferred until procurement.
 - [ ] P1-001 Add CI and make TypeScript/build/test checks blocking.
 - [ ] P1-002 Define `DEMO_MODE` and enumerate production-excluded routes/components/data.
 - [ ] P1-003 Create an endpoint authorization and data-classification matrix.
