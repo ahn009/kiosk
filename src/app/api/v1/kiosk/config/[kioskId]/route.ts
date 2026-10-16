@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { ok, fail } from "@/lib/auth-runtime";
+import { runtimeConfig } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
 
@@ -33,5 +34,8 @@ export async function GET(
       startedAt: state?.lockdownStartedAt?.toISOString() ?? null,
     },
     lastSyncAt: kiosk.lastSyncAt?.toISOString() ?? null,
+    capabilities: {
+      demoMode: runtimeConfig.features.demoMode,
+    },
   });
 }

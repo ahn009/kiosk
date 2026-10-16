@@ -64,6 +64,7 @@ type KioskConfigResponse = {
   configVersion: number;
   lockdown: { active: boolean; reason: string | null; startedAt: string | null };
   lastSyncAt: string | null;
+  capabilities: { demoMode: boolean };
 };
 
 /** Local fallback for kiosks not registered in the DB. */
@@ -82,6 +83,7 @@ type KioskRuntime = {
   thresholdGranted: number;
   thresholdChallenge: number;
   lockdown: boolean;
+  demoMode: boolean;
 };
 
 export function KioskApp() {
@@ -146,6 +148,7 @@ export function KioskApp() {
           thresholdGranted: cfg.thresholds.granted,
           thresholdChallenge: cfg.thresholds.challenge,
           lockdown: cfg.lockdown.active,
+          demoMode: cfg.capabilities.demoMode,
         });
         setKioskStatus(cfg.lockdown.active ? "lockdown" : cfg.status || "online");
         if (cfg.lockdown.active) {
@@ -190,9 +193,10 @@ export function KioskApp() {
   }, []);
 
   const openDemoPicker = useCallback(() => {
+    if (!kioskMeta?.demoMode) return;
     setDemoOpen(true);
     if (demoCards.length === 0) void loadDemoCards();
-  }, [demoCards.length, loadDemoCards]);
+  }, [demoCards.length, kioskMeta?.demoMode, loadDemoCards]);
 
   // ---- Start a scan ----
   const startScan = useCallback(
@@ -455,7 +459,8 @@ export function KioskApp() {
     setSupervisorOpen(false);
   }, []);
 
-  const superoverrideAvailable = faceFailCount >= 2 && state.kind === "DENIED";
+  const superoverrideAvailable =
+    Boolean(kioskMeta?.demoMode) && faceFailCount >= 2 && state.kind === "DENIED";
 
   return (
     <div className="fixed inset-0 dark bg-background text-foreground overflow-hidden select-none">
@@ -514,7 +519,7 @@ export function KioskApp() {
 
       {/* Demo picker */}
       <DemoScanPicker
-        open={demoOpen}
+        open={Boolean(kioskMeta?.demoMode && demoOpen)}
         onOpenChange={setDemoOpen}
         cards={demoCards}
         loading={demoLoading}
@@ -523,12 +528,14 @@ export function KioskApp() {
       />
 
       {/* Supervisor override */}
-      <SupervisorOverride
-        open={supervisorOpen}
-        onOpenChange={setSupervisorOpen}
-        onConfirm={handleSupervisorConfirm}
-        onCancel={handleSupervisorCancel}
-      />
+      {kioskMeta?.demoMode && (
+        <SupervisorOverride
+          open={supervisorOpen}
+          onOpenChange={setSupervisorOpen}
+          onConfirm={handleSupervisorConfirm}
+          onCancel={handleSupervisorCancel}
+        />
+      )}
     </div>
   );
 }
@@ -573,6 +580,7 @@ function renderState(p: {
           orgCode={p.orgCode}
           clock={p.clock}
           cameraReady={false}
+          demoMode={p.kioskMeta?.demoMode ?? false}
           onOpenDemoPicker={p.onOpenDemoPicker}
           onScanLineClick={p.onScanLineClick}
         />

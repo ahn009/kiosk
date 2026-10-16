@@ -3,8 +3,14 @@
   "version": "0.2.1",
   "description": "Multi-kiosk employee identity verification and access-control system.",
   "private": true,
+  "type": "module",
   "license": "MIT",
   "author": "Sentinel Security",
+  "packageManager": "npm@12.1.0",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/ahn009/kiosk.git"
@@ -12,8 +18,11 @@
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/unit/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

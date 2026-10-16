@@ -103,7 +103,7 @@ export function Launcher() {
         >
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground mb-6">
             <Fingerprint className="size-3.5 text-primary" />
-            Encrypted QR · Face Recognition · Immutable Audit
+            Credential verification · Face pipeline · Auditable decisions
           </div>
           <h2 className="text-4xl sm:text-5xl font-bold tracking-tight text-balance">
             Choose your{" "}
@@ -178,11 +178,11 @@ export function Launcher() {
                 </div>
                 <h3 className="mt-5 text-xl font-semibold">Kiosk Mode</h3>
                 <p className="mt-1.5 text-sm text-muted-foreground">
-                  Fullscreen verification flow: scan encrypted QR ID, liveness
-                  check, face match, gate trigger, and immutable logging.
+                  Fullscreen verification flow for credential evidence, face
+                  checks, policy decisions, and controller integration.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  {["QR scan", "Face match", "Liveness", "Gate relay"].map(
+                  {["Credential scan", "Face evidence", "Policy", "Controller adapter"].map(
                     (t) => (
                       <Badge key={t} variant="secondary" className="font-normal">
                         {t}
@@ -286,23 +286,23 @@ export function Launcher() {
             {[
               {
                 icon: Zap,
-                title: "< 2s P95",
-                desc: "Scan-to-gate latency",
+                title: "Real inputs",
+                desc: "Camera and credential evidence",
               },
               {
                 icon: Lock,
-                title: "AES-256",
-                desc: "Encrypted snapshots",
+                title: "Versioned",
+                desc: "Policy and adapter contracts",
               },
               {
                 icon: Database,
-                title: "Immutable",
-                desc: "Append-only audit",
+                title: "Non-actuating",
+                desc: "Safe development controller",
               },
               {
                 icon: Activity,
-                title: "72h offline",
-                desc: "Edge fail-safe",
+                title: "Replaceable",
+                desc: "Cloud and hardware adapters",
               },
             ].map((f) => (
               <Card key={f.title} className="p-4">
@@ -330,10 +330,10 @@ export function Launcher() {
           </div>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
-              <Server className="size-3.5" /> Postgres + pgvector · Redis · MinIO
+              <Server className="size-3.5" /> Local reference environment
             </span>
             <span className="flex items-center gap-1.5">
-              <Camera className="size-3.5" /> InsightFace ArcFace · MiniFASNet
+              <Camera className="size-3.5" /> Production architecture in progress
             </span>
           </div>
         </div>

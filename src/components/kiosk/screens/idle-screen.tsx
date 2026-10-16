@@ -24,6 +24,7 @@ export function IdleScreen({
   orgCode,
   clock,
   cameraReady,
+  demoMode,
   onOpenDemoPicker,
   onScanLineClick,
 }: {
@@ -34,6 +35,7 @@ export function IdleScreen({
   orgCode: string;
   clock: Date;
   cameraReady: boolean;
+  demoMode: boolean;
   onOpenDemoPicker: () => void;
   onScanLineClick: () => void;
 }) {
@@ -132,23 +134,24 @@ export function IdleScreen({
             </div>
           </motion.button>
 
-          {/* Demo scan trigger */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="mt-8"
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onOpenDemoPicker}
-              className="gap-2 border-dashed bg-card/40 backdrop-blur"
+          {demoMode && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="mt-8"
             >
-              <CreditCard className="size-3.5" />
-              Simulate card scan
-            </Button>
-          </motion.div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenDemoPicker}
+                className="gap-2 border-dashed bg-card/40 backdrop-blur"
+              >
+                <CreditCard className="size-3.5" />
+                Simulate card scan
+              </Button>
+            </motion.div>
+          )}
         </motion.div>
       </div>
 

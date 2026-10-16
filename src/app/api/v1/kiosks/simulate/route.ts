@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-runtime";
 import { emitAlert } from "@/lib/emit-alert";
+import { demoModeUnavailable, runtimeConfig } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // back). Emits a real-time alert. Used by the "Simulate status change" button
 // in the kiosks view to demonstrate live monitoring + alert dispatch.
 export async function POST(req: NextRequest) {
+  if (!runtimeConfig.features.demoMode) return demoModeUnavailable();
+
   const auth = await requireRole(req, ["security_officer", "superadmin"]);
   if (auth.response) return auth.response;
 

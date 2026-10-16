@@ -22,15 +22,15 @@ SentinelKiosk is a multi-kiosk employee access-control system. It combines signe
 
 ## Quick start
 
-Requirements: Node.js 20+ or Bun, with Bun recommended for the complete development stack.
+Requirements: Node.js 24 and npm 11 or newer for the main application. Bun is currently required only for the separate alert service and legacy packaging scripts while they are migrated.
 
 ```bash
 cp .env.example .env
-bun install
-bun run db:generate
-bun run db:push
+npm ci
+npm run db:generate
+npm run db:push
 bun prisma/seed.ts
-bun run dev
+npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). The repository includes demonstration users and data in `prisma/seed.ts`; do not use those credentials in production.
@@ -46,9 +46,7 @@ bun run dev
 ## Quality checks
 
 ```bash
-bun run lint
-bunx tsc --noEmit
-bun run build
+npm run check
 bash tests/database-runtime-build.sh
 bash tests/python-runtime-build.sh
 ```

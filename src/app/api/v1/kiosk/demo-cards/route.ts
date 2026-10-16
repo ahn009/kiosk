@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { buildToken, sha256 } from "@/lib/crypto";
+import { demoModeUnavailable, runtimeConfig } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // is NEVER stored server-side; this exists purely to make the kiosk demo
 // end-to-end testable. Each call rotates the stored token hash.
 export async function GET(_req: NextRequest) {
+  if (!runtimeConfig.features.demoMode) return demoModeUnavailable();
+
   const orgState = await db.systemState.findUnique({ where: { id: "singleton" } });
   const orgCode = orgState?.orgCode ?? "ACME";
 
